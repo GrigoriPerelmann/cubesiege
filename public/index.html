@@ -42,7 +42,7 @@
     </div>
     <p class="help"><b>Keyboard:</b> WASD / arrows move &middot; Space shoot where you face (auto-aim helps)<br>
       <b>Mouse:</b> aim with the mouse &middot; click to shoot<br>
-      1-0 / Q E / wheel switch weapon &middot; Enter chat &middot; Tab scores &middot; M mute</p>
+      1-0 / Q E / wheel switch weapon &middot; Z X C pick perks &middot; Enter chat &middot; Tab scores &middot; M mute &middot; Esc pause (host)</p>
     <div id="status" class="status"></div>
   </div>
 </section>
@@ -64,13 +64,37 @@
       <div class="col">
         <h3>Survivors</h3>
         <ul id="playerList" class="players"></ul>
-        <div id="lobbyMaps" class="maps"></div>
+        <h4>Your character</h4>
+        <div id="charPick" class="chars"></div>
       </div>
       <div class="col">
         <h3>Chat</h3>
         <div id="lobbyChat" class="chatlog"></div>
         <input id="lobbyChatIn" maxlength="140" placeholder="Say something..." autocomplete="off">
       </div>
+    </div>
+    <div class="settings">
+      <h3>Game setup <span id="cfgNote" class="muted note">set by the host</span></h3>
+      <h4>Mode</h4>
+      <div id="modePick" class="seg"></div>
+      <p id="modeDesc" class="muted small-text desc"></p>
+      <div id="missionBox" class="hidden">
+        <h4>Mission <span id="missionProg" class="muted note"></span></h4>
+        <div id="missionPick" class="missions"></div>
+        <p id="missionDesc" class="muted small-text desc"></p>
+      </div>
+      <div id="mapBox">
+        <h4>Map</h4>
+        <div id="lobbyMaps" class="maps five"></div>
+      </div>
+      <h4>Difficulty</h4>
+      <div id="diffPick" class="seg"></div>
+      <p id="diffDesc" class="muted small-text desc"></p>
+      <div id="foeBox">
+        <h4>Undead types</h4>
+        <div id="foePick" class="foes"></div>
+      </div>
+      <p id="bestNote" class="muted small-text"></p>
     </div>
     <div class="row actions">
       <button id="leaveBtn" class="ghost">Leave</button>
@@ -83,7 +107,7 @@
 <!-- game over -->
 <section id="over" class="screen hidden">
   <div class="panel">
-    <h2 class="danger">OVERRUN</h2>
+    <h2 id="overTitle" class="danger">OVERRUN</h2>
     <p id="overSummary" class="tag"></p>
     <table id="overTable" class="stats"></table>
     <div class="row actions">

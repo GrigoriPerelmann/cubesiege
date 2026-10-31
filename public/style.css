@@ -34,6 +34,7 @@ body.playing #vignette, body.playing #hurt { display: block; }
 .tag { text-align: center; color: var(--muted); margin: 10px 0 18px; }
 h2 { font-family: 'Bungee', sans-serif; font-size: 48px; text-align: center; margin: 0; }
 h2.danger { color: var(--accent2); text-shadow: 0 4px 0 #6e1716; }
+h2.victory { color: var(--good); text-shadow: 0 4px 0 #1d5a2c; }
 h3 { font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 17px; margin: 6px 0 10px; color: var(--accent); letter-spacing: 1px; }
 h4 { margin: 16px 0 8px; color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
 
@@ -70,6 +71,32 @@ button:disabled { opacity: .45; cursor: default; }
 .map span { font-size: 11.5px; color: var(--muted); line-height: 1.25; display: block; margin-top: 3px; }
 .map canvas { display: block; width: 100%; image-rendering: pixelated; margin-bottom: 6px; border-radius: 2px; }
 .maps.locked .map { cursor: default; }
+.maps.five { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 720px) { .maps.five { grid-template-columns: 1fr 1fr; } }
+
+.settings { border-top: 2px solid var(--line); margin-top: 18px; padding-top: 12px; }
+.settings h3 .note { font-family: 'Rubik', sans-serif; font-size: 12px; letter-spacing: 0; margin-left: 8px; }
+.settings .desc { margin: 6px 0 0; min-height: 19px; }
+.locked, .locked * { cursor: default !important; }
+
+.chars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.chars .char, .foes .foe { border: 2px solid var(--line); border-radius: 4px; background: #15130f; cursor: pointer;
+  text-align: center; padding: 4px 2px 5px; font-size: 11.5px; font-weight: 600; transition: border-color .15s, opacity .15s; }
+.chars .char:hover, .foes:not(.locked) .foe:hover { border-color: #6b5f50; }
+.chars .char.sel { border-color: var(--accent); background: #2a2214; }
+.chars canvas, .foes canvas { display: block; margin: 0 auto 2px; width: 48px; height: 54px; }
+
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg button { flex: 1; min-width: 100px; }
+.seg button.sel { background: var(--accent); color: #2a1a00; border-color: #8a5a14; }
+.seg.locked button:not(.sel) { opacity: .45; }
+
+.foes { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+@media (max-width: 720px) { .foes { grid-template-columns: repeat(4, 1fr); } }
+.foes .foe { border-color: var(--good); }
+.foes .foe.off { border-color: var(--line); opacity: .4; }
+.foes .foe.off canvas { filter: grayscale(1); }
+.foes .foe small { display: block; color: var(--muted); font-weight: 400; font-size: 10px; }
 
 .rooms { display: flex; flex-direction: column; gap: 6px; max-height: 210px; overflow-y: auto; }
 .roomItem { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #15130f;
@@ -111,3 +138,19 @@ button:disabled { opacity: .45; cursor: default; }
   background: rgba(10, 9, 8, 0.85); }
 .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 2px solid var(--accent);
   padding: 8px 16px; border-radius: 4px; z-index: 10; font-weight: 600; }
+
+.missions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+@media (max-width: 720px) { .missions { grid-template-columns: 1fr; } }
+.mission { display: flex; align-items: center; gap: 10px; border: 2px solid var(--line); border-radius: 4px; padding: 6px 10px;
+  background: #15130f; cursor: pointer; transition: border-color .15s; min-width: 0; }
+.mission:hover { border-color: #6b5f50; }
+.mission.sel { border-color: var(--accent); background: #2a2214; }
+.mission.locked { opacity: .4; cursor: default; }
+.mission.locked:hover { border-color: var(--line); }
+.mission .num { font-family: 'Bungee', sans-serif; font-size: 20px; color: var(--accent); width: 30px; text-align: center; flex: none; }
+.mission.done .num { color: var(--good); }
+.mission div { min-width: 0; }
+.mission b { display: block; font-size: 14px; }
+.mission small { display: block; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.missions.locked .mission { cursor: default; }
+#overTitle { font-size: clamp(30px, 6vw, 44px); }

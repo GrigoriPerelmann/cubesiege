@@ -30,15 +30,41 @@ function mk(w, h) {
 
 // --------------------------------------------------------- enemy styles --
 export const LOOKS = {
-  player: { s: 1, skin: '#e2b48c', pants: '#2b3346', eye: '#1b1b1b' },
   shambler: { s: 1, skin: '#83a86b', shirt: '#5d4c3b', pants: '#363b45', eye: '#3a0606', zombie: true },
   sprinter: { s: 0.88, skin: '#b3c2b8', shirt: '#2f3b52', pants: '#22242a', eye: '#ffd23a', zombie: true, slim: true },
   brute: { s: 1.5, skin: '#757093', shirt: '#3d2f42', pants: '#2a2530', eye: '#ff3a3a', zombie: true, big: true },
   warlock: { s: 1.05, skin: '#c4473a', shirt: '#2b1825', pants: '#2b1825', eye: '#ffcc33', horns: '#eadcb5', robe: true },
   bloater: { s: 1.15, skin: '#a8b64c', shirt: '#7d8a31', pants: '#4a5222', eye: '#2a2a00', zombie: true, fat: true },
   colossus: { s: 2.4, skin: '#5c2121', shirt: '#26262b', pants: '#1c1c20', eye: '#ffb02e', horns: '#d8c8a0', zombie: true, big: true, glow: '#ff6a2a' },
+  leaper: { s: 0.85, skin: '#8a8f4a', shirt: '#4a3626', pants: '#2a2420', eye: '#ff5a1a', zombie: true, slim: true, claws: true },
+  spitter: { s: 1, skin: '#7cbf4a', shirt: '#3a4a2a', pants: '#2a3020', eye: '#e8ff40', zombie: true, sac: '#b8ff40' },
+  riot: { s: 1.12, skin: '#8a9a88', shirt: '#26324a', pants: '#1a2030', eye: '#ff3a3a', zombie: true, hat: 'riot', shield: true },
+  shaman: { s: 1, skin: '#5f8a5a', shirt: '#2f4a2a', pants: '#2f4a2a', eye: '#7fff8f', robe: true, glow: '#7fff8f', horns: '#a89a7a' },
+  splitter: { s: 1.25, skin: '#b0708e', shirt: '#6a3050', pants: '#3a2030', eye: '#ffe040', zombie: true, fat: true, pus: '#ff9ac0' },
+  wraith: { s: 1, skin: '#c8e0f0', shirt: '#6a8ab0', pants: '#4a6a90', eye: '#40e8ff', robe: true, ghost: true },
+  juggernaut: { s: 2.1, skin: '#6f6a78', shirt: '#33333d', pants: '#22222a', eye: '#ff2a2a', zombie: true, big: true, glow: '#ff3a2a', spikes: '#c8c0b0' },
+  splitling: { s: 0.62, skin: '#c48aa4', shirt: '#6a3050', pants: '#3a2030', eye: '#ffe040', zombie: true },
 };
-export const BLOOD = { shambler: '#8a1010', sprinter: '#7a1414', brute: '#5a0d2a', warlock: '#d0601a', bloater: '#7fa020', colossus: '#6a0808' };
+// bigger, gold-trimmed variant of a look for elite undead
+const eliteCache = {};
+export function eliteLook(type) {
+  if (!eliteCache[type]) eliteCache[type] = { ...LOOKS[type], s: LOOKS[type].s * 1.15, elite: true };
+  return eliteCache[type];
+}
+// Playable characters: purely cosmetic. Each one is a look for drawChar; the shirt always
+// takes the player's colour.
+export const CHARS = [
+  { name: 'Survivor', s: 1, skin: '#e2b48c', pants: '#2b3346', eye: '#1b1b1b', hair: true },
+  { name: 'Soldier', s: 1, skin: '#c99a74', pants: '#3b4630', eye: '#1b1b1b', hat: 'helmet' },
+  { name: 'Cowboy', s: 1, skin: '#e0ae86', pants: '#3a4a6a', eye: '#1b1b1b', hat: 'cowboy' },
+  { name: 'Robot', s: 1, skin: '#9aa4ae', pants: '#4a525c', eye: '#5ff0ff', hat: 'robot' },
+  { name: 'Ninja', s: 1, skin: '#e2b48c', pants: '#1c1c22', eye: '#1b1b1b', hat: 'ninja' },
+  { name: 'Punk', s: 1, skin: '#d8a882', pants: '#232326', eye: '#1b1b1b', hat: 'mohawk' },
+  { name: 'Chef', s: 1, skin: '#f0c49c', pants: '#2b2b2b', eye: '#1b1b1b', hat: 'chef' },
+  { name: 'Viking', s: 1, skin: '#e8bc94', pants: '#5a3e26', eye: '#1b1b1b', hat: 'viking', beard: '#c07a30' },
+];
+export const BLOOD = { shambler: '#8a1010', sprinter: '#7a1414', brute: '#5a0d2a', warlock: '#d0601a', bloater: '#7fa020', colossus: '#6a0808',
+  leaper: '#7a1a10', spitter: '#8acc30', riot: '#6a1010', shaman: '#3a8a3a', splitter: '#a03070', wraith: '#9ad8ff', juggernaut: '#5a0808', splitling: '#a03070' };
 
 // ------------------------------------------------------------ renderer --
 export class Renderer {
@@ -244,6 +270,7 @@ export class Renderer {
 
   drawCrate(g, tx, ty, x, y) {
     const th = this.theme;
+    if (th.grave) { this.drawGrave(g, tx, ty, x, y); return; }
     const h = 20, i = 2;
     const w = T - i * 2;
     const top = th.crateTop, front = th.crateFront;
@@ -275,6 +302,36 @@ export class Renderer {
     g.strokeStyle = 'rgba(0,0,0,0.5)';
     g.lineWidth = 1;
     g.strokeRect(x0 + 0.5, y - h + i + 0.5, x1 - x0 - 1, T - i * 2 + (below ? 0 : h) - 1);
+  }
+
+  drawGrave(g, tx, ty, x, y) {
+    const th = this.theme;
+    const x0 = x + 6, w = T - 12, h = 22, r = w / 2;
+    const tilt = (hash(tx, ty) - 0.5) * 3;
+    g.fillStyle = 'rgba(0,0,0,0.3)';
+    g.fillRect(x + 3, y + T - 8, T - 6, 6);
+    // front face
+    g.fillStyle = th.crateFront;
+    g.fillRect(x0, y + T - h - 4, w, h);
+    // rounded top face
+    g.fillStyle = shade(th.crateTop, (hash(tx * 3, ty) - 0.5) * 0.15);
+    g.beginPath();
+    g.moveTo(x0, y + T - h - 4);
+    g.lineTo(x0, y - 2 + r);
+    g.arc(x0 + r + tilt * 0.3, y - 2 + r, r, Math.PI, 0);
+    g.lineTo(x0 + w, y + T - h - 4);
+    g.fill();
+    g.strokeStyle = 'rgba(0,0,0,0.5)';
+    g.lineWidth = 1;
+    g.stroke();
+    // engraved cross
+    g.fillStyle = 'rgba(0,0,0,0.3)';
+    g.fillRect(x + T / 2 - 1, y + 4, 2, 11);
+    g.fillRect(x + T / 2 - 4, y + 7, 8, 2);
+    if (hash(tx, ty * 7) > 0.6) { // moss
+      g.fillStyle = 'rgba(80,120,60,0.45)';
+      g.fillRect(x0, y + T - 10, w * hash(tx, ty), 4);
+    }
   }
 
   drawTree(g, tx, ty, x, y) {
@@ -435,7 +492,13 @@ export class Renderer {
   drawChar(ctx, o) {
     const L = o.look;
     const s = L.s;
-    const x = o.x, y = o.y, a = o.a;
+    const x = o.x, a = o.a;
+    let y = o.y;
+    if (L.ghost) {
+      ctx.save();
+      ctx.globalAlpha = 0.5 + Math.sin((o.t || 0) * 4 + (o.id || 0)) * 0.12;
+      y -= 4 + Math.sin((o.t || 0) * 3 + (o.id || 0)) * 2;
+    }
     const ca = Math.cos(a), sa = Math.sin(a);
     const fl = o.flash;
     const col = c => (fl ? '#ffffff' : c);
@@ -500,7 +563,18 @@ export class Renderer {
       }
     };
 
+    const drawShield = () => {
+      // riot shield: a plate held in front, seen edge-on from the side
+      const sw = (5 + 13 * Math.abs(sa)) * s, sh = 19 * s;
+      const sx = x + ca * 9 * s - sw / 2, sy = y - legH - bodyH + sa * 3 * s;
+      box(sx, sy, sw, sh, '#55657a');
+      ctx.fillStyle = col('rgba(170,210,255,0.55)');
+      ctx.fillRect(sx + 2 * s, sy + 3 * s, sw - 4 * s, 3 * s);
+      ctx.fillStyle = col('#e8e8e8');
+      if (Math.abs(sa) > 0.35) ctx.fillRect(sx + 2 * s, sy + 10 * s, sw - 4 * s, 2 * s);
+    };
     if (facingUp) drawArms();
+    if (L.shield && o.shieldUp && facingUp) drawShield();
     // legs
     if (L.robe) {
       box(x - bodyW / 2 - 1 * s, y - legH - 2 * s, bodyW + 2 * s, legH + 2 * s, shade(shirt, -0.2));
@@ -518,8 +592,21 @@ export class Renderer {
       ctx.fillStyle = 'rgba(110,0,0,0.6)';
       ctx.fillRect(x + 2 * s, bodyTop + 8 * s, 3 * s, 2 * s);
     }
+    if (L.sac && !fl) {
+      ctx.fillStyle = L.sac;
+      ctx.globalAlpha = 0.65 + Math.sin((o.t || 0) * 6 + (o.id || 0)) * 0.25;
+      ctx.fillRect(x - 4 * s, bodyTop + 1 * s, 8 * s, 5 * s);
+      ctx.globalAlpha = 1;
+    }
+    if (L.spikes && !fl) {
+      ctx.fillStyle = L.spikes;
+      for (const side of [-1, 1]) {
+        const bx = x + side * bodyW / 2;
+        ctx.beginPath(); ctx.moveTo(bx - 3 * s, bodyTop + 1 * s); ctx.lineTo(bx + side * 2 * s, bodyTop - 6 * s); ctx.lineTo(bx + 3 * s, bodyTop + 1 * s); ctx.fill();
+      }
+    }
     if (L.fat && !fl) {
-      ctx.fillStyle = '#d8e070';
+      ctx.fillStyle = L.pus || '#d8e070';
       ctx.fillRect(x - 7 * s, bodyTop + 4 * s, 3 * s, 3 * s);
       ctx.fillRect(x + 5 * s, bodyTop + 8 * s, 4 * s, 4 * s);
       ctx.fillRect(x - 2 * s, bodyTop + 10 * s, 2 * s, 2 * s);
@@ -550,6 +637,7 @@ export class Renderer {
       ctx.fillStyle = col(shade(L.skin, -0.25));
       ctx.fillRect(hx + 2 * s, headTop + 1 * s, 4 * s, 2 * s);
     }
+    if (L.hat) this.drawHat(ctx, L.hat, hx, headTop, headW, headH, facingUp, col, box, o.shirt);
     if (!facingUp && !fl) {
       const ex = x + ca * 3.5 * s, ey = headTop + 5.5 * s + Math.max(0, sa) * 1.5 * s;
       ctx.fillStyle = L.eye;
@@ -561,10 +649,70 @@ export class Renderer {
         ctx.fillRect(ex - 2 * s, ey + 4 * s, 4 * s, 1.5 * s);
       }
     }
+    if (L.beard && !facingUp) box(hx + 2, headTop + headH - 5, headW - 4, 7, L.beard);
     if (!facingUp) drawArms();
+    if (L.claws && !fl && !facingUp) {
+      ctx.fillStyle = '#e8e0c8';
+      for (const side of [-1, 1]) {
+        const cx = x - sa * side * (bodyW / 2) + ca * 12 * s, cy = shoulderY + 2 * s + sa * 9 * s + ca * side * 2 * s;
+        ctx.fillRect(cx - 1, cy - 1, 2.5 * s, 2.5 * s);
+      }
+    }
+    if (L.shield && o.shieldUp && !facingUp) drawShield();
     if (o.burn && !fl) {
       ctx.fillStyle = 'rgba(255,120,20,0.35)';
       ctx.fillRect(x - bodyW / 2, headTop, bodyW, y - headTop);
+    }
+    if (L.ghost) ctx.restore();
+  }
+
+  // headgear for player characters (scale 1)
+  drawHat(ctx, hat, hx, top, w, h, back, col, box, band) {
+    const R = (x, y, ww, hh, c) => { ctx.fillStyle = col(c); ctx.fillRect(x, y, ww, hh); };
+    const cx = hx + w / 2;
+    switch (hat) {
+      case 'helmet':
+        box(hx - 1, top - 3, w + 2, 7, '#4b5a35');
+        R(hx - 2, top + 3, w + 4, 2, '#36412a');
+        R(hx + 2, top - 2, 3, 2, '#62744a');
+        break;
+      case 'cowboy':
+        R(hx - 5, top + 1, w + 10, 3, '#6b4423');
+        box(hx + 1, top - 5, w - 2, 7, '#7a5030');
+        R(hx + 1, top, w - 2, 1.5, '#2a1a10');
+        break;
+      case 'robot':
+        ctx.strokeStyle = col('#4a525c'); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(cx, top); ctx.lineTo(cx, top - 6); ctx.stroke();
+        R(cx - 1.5, top - 8, 3, 3, '#ff4030');
+        R(hx - 1, top + 4, 1.5, 4, '#5b6470'); R(hx + w - 0.5, top + 4, 1.5, 4, '#5b6470');
+        if (!back) R(hx + 1, top + 4.5, w - 2, 4, '#1a2a30');
+        break;
+      case 'ninja':
+        box(hx, top, w, h, '#1c1c22');
+        if (!back) R(hx + 1, top + 4.5, w - 2, 4, '#e2b48c');
+        R(hx, top + 2, w, 2, band || '#c03030');
+        if (back) R(cx - 1, top + 3, 2, 6, band || '#c03030');
+        break;
+      case 'mohawk':
+        for (let k = 0; k < 4; k++) R(cx - 1.5, top - 6 + k * 0.5 - (k % 2) * 1.5, 3, 3 + 1.5 * (k % 2), '#e83a8a');
+        R(cx - 1.5, top - 5, 3, 6, '#e83a8a');
+        break;
+      case 'riot':
+        box(hx - 1, top - 3, w + 2, 8, '#1e2633');
+        if (!back) R(hx, top + 4, w, 3, 'rgba(150,200,255,0.55)');
+        break;
+      case 'chef':
+        box(hx + 1, top - 7, w - 2, 9, '#ececec');
+        box(hx - 1, top - 12, w + 2, 6, '#ffffff');
+        break;
+      case 'viking':
+        ctx.fillStyle = col('#eadcb5');
+        ctx.beginPath(); ctx.moveTo(hx, top + 2); ctx.lineTo(hx - 5, top - 7); ctx.lineTo(hx + 3, top - 1); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(hx + w, top + 2); ctx.lineTo(hx + w + 5, top - 7); ctx.lineTo(hx + w - 3, top - 1); ctx.fill();
+        box(hx - 1, top - 3, w + 2, 6, '#8a8f96');
+        R(cx - 1, top - 3, 2, 6, '#6a6f76');
+        break;
     }
   }
 
@@ -592,6 +740,52 @@ export class Renderer {
     ctx.lineWidth = 1;
     ctx.strokeRect(x0 + 0.5, y0 - h + 0.5, 29, 30 + h - 1);
     this.miniBar(ctx, x, y0 - h - 6, hp, '#d9a441');
+  }
+
+  drawGenerator(ctx, x, y, hp, t) {
+    const x0 = x - 15, y0 = y - 15, h = 26;
+    ctx.fillStyle = '#4a4f3a';
+    ctx.fillRect(x0, y0 + 30 - h, 30, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    for (let k = 4; k < h; k += 5) ctx.fillRect(x0 + 3, y0 + 30 - h + k, 24, 2);
+    ctx.fillStyle = '#d8b030';
+    ctx.fillRect(x0, y0 - h, 30, 30);
+    ctx.fillStyle = '#222';
+    for (let k = 0; k < 30; k += 8) ctx.fillRect(x0 + k, y0 - h, 4, 4);
+    // spinning fan
+    ctx.fillStyle = '#3a3a3a';
+    ctx.beginPath(); ctx.arc(x, y0 - h + 16, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#8a8a8a';
+    ctx.lineWidth = 2;
+    const sp = hp > 0 ? t * 14 : 0;
+    for (let k = 0; k < 3; k++) {
+      const a = sp + k * Math.PI * 2 / 3;
+      ctx.beginPath(); ctx.moveTo(x, y0 - h + 16); ctx.lineTo(x + Math.cos(a) * 8, y0 - h + 16 + Math.sin(a) * 8); ctx.stroke();
+    }
+    ctx.fillStyle = hp > 30 || (t * 4) % 1 < 0.5 ? (hp > 30 ? '#5fff6a' : '#ff4030') : '#401010';
+    ctx.fillRect(x0 + 24, y0 - h + 4, 4, 4);
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, y0 - h + 0.5, 29, 30 + h - 1);
+    // health bar, always visible
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(x - 20, y0 - h - 10, 40, 6);
+    ctx.fillStyle = hp > 50 ? '#5fff6a' : hp > 25 ? '#e8b030' : '#ff4030';
+    ctx.fillRect(x - 19, y0 - h - 9, 38 * Math.max(0, hp) / 100, 4);
+  }
+
+  drawHazard(ctx, x, y, r, life, t, id) {
+    const f = Math.min(1, life / 1.2);
+    ctx.fillStyle = `rgba(120,200,30,${0.32 * f})`;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(170,240,60,${0.35 * f})`;
+    ctx.beginPath(); ctx.ellipse(x, y, r * 0.65, r * 0.45, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(220,255,140,${0.6 * f})`;
+    for (let k = 0; k < 4; k++) {
+      const ph = (t * 1.3 + k * 0.25 + id * 0.37) % 1;
+      const bx = x + Math.cos(k * 2.1 + id) * r * 0.5, by = y + Math.sin(k * 1.7 + id) * r * 0.3;
+      ctx.beginPath(); ctx.arc(bx, by, 1 + ph * 2.5, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
   drawMine(ctx, x, y, t) {
@@ -652,6 +846,37 @@ export class Renderer {
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(x, y + 2, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
     const by = y - h;
+    if (kind === 3) {
+      const pulse = 0.5 + Math.sin(t * 4 + id) * 0.5;
+      ctx.fillStyle = `rgba(255,80,40,${0.15 + pulse * 0.2})`;
+      ctx.beginPath(); ctx.arc(x, by, 18 + pulse * 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#a01e14'; ctx.fillRect(x - 8, by - 4, 16, 14);
+      ctx.fillStyle = '#d83020'; ctx.fillRect(x - 8, by - 10, 16, 6);
+      ctx.fillStyle = '#2a2a2a'; ctx.fillRect(x - 6, by - 14, 6, 4); ctx.fillRect(x + 2, by - 13, 4, 3);
+      ctx.fillStyle = '#f2c230'; ctx.fillRect(x - 5, by + 1, 10, 2); ctx.fillRect(x - 5, by + 5, 10, 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - 7.5, by - 9.5, 15, 19);
+      return;
+    }
+    if (kind === 2) {
+      const pulse = 0.5 + Math.sin(t * 5 + id) * 0.5;
+      ctx.fillStyle = `rgba(255,200,60,${0.15 + pulse * 0.2})`;
+      ctx.beginPath(); ctx.arc(x, by, 16 + pulse * 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#8a5a14'; ctx.fillRect(x - 10, by - 2, 20, 11);
+      ctx.fillStyle = '#f2b33a'; ctx.fillRect(x - 10, by - 9, 20, 7);
+      ctx.fillStyle = '#fff4c0';
+      ctx.beginPath();
+      for (let k = 0; k < 10; k++) {
+        const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? 2 : 4.5;
+        ctx.lineTo(x + Math.cos(a) * rr, by + 3 + Math.sin(a) * rr);
+      }
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - 9.5, by - 8.5, 19, 17);
+      return;
+    }
     if (kind === 0) {
       ctx.fillStyle = '#4c5a2c'; ctx.fillRect(x - 9, by - 2, 18, 10);
       ctx.fillStyle = '#6a7d3c'; ctx.fillRect(x - 9, by - 8, 18, 6);
@@ -671,6 +896,28 @@ export class Renderer {
 
   // ------------------------------------------------- projectiles --
   drawProj(ctx, kind, x, y, vx, vy, t) {
+    if (kind === 4) { // acid glob
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath(); ctx.ellipse(x, y, 5, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+      const yy = y - 20;
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(x, yy, 0, x, yy, 14);
+      g.addColorStop(0, 'rgba(170,255,60,0.8)');
+      g.addColorStop(1, 'rgba(80,200,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, yy, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = '#c8ff60';
+      ctx.beginPath(); ctx.arc(x, yy, 4 + Math.sin(t * 18) * 0.8, 0, Math.PI * 2); ctx.fill();
+      return;
+    }
+    if (kind === 3) { // cluster bomblet
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath(); ctx.ellipse(x, y, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#3a3f34'; ctx.fillRect(x - 3, y - 11, 6, 6);
+      ctx.fillStyle = (t * 12) % 1 < 0.5 ? '#ff5030' : '#ffd060'; ctx.fillRect(x - 1, y - 12, 2, 2);
+      return;
+    }
     if (kind === 0) {
       const a = Math.atan2(vy, vx);
       ctx.fillStyle = 'rgba(0,0,0,0.3)';

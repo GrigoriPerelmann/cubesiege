@@ -1,10 +1,11 @@
 // The room "server", running inside the host's browser.
 // Clients (the host's own client and remote peers) talk to it with the same JSON messages.
-import { Game, isMap } from './sim.js';
+import { Game, isMap, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS } from './sim.js';
 
 const TICK = 1 / 30;
 const SNAPSHOT_EVERY = 2;     // ticks per snapshot -> 15 Hz
 export const MAX_PLAYERS = 8;
+const MAX_CHARS = 32;          // cosmetic character index; the renderer falls back for unknown ones
 const COLORS = ['#e8423f', '#3f8be8', '#f2c230', '#3fc46a', '#b25be8', '#f2873a', '#38d0d0', '#ef6fb4'];
 
 const cleanText = (s, n) => [...String(s ?? '')].filter(ch => ch >= ' ').join('').trim().slice(0, n);
@@ -28,6 +29,11 @@ export class Host {
   constructor(code, mapId) {
     this.code = code;
     this.mapId = isMap(mapId) ? mapId : 'depot';
+    this.diff = 'normal';
+    this.foes = [...FOE_TYPES];
+    this.mode = 'classic';
+    this.mission = 0;
+    this.paused = false;
     this.clients = new Map();     // id -> { id, name, color, inRoom, sendRaw }
     this.hostId = null;
     this.state = 'lobby';
@@ -38,7 +44,7 @@ export class Host {
 
   // ---------------------------------------------------------- clients --
   addClient(sendRaw) {
-    const c = { id: ++this.nid, name: `Player${this.nid + 1}`, color: null, inRoom: false, sendRaw };
+    const c = { id: ++this.nid, name: `Player${this.nid + 1}`, color: null, char: 0, inRoom: false, sendRaw };
     this.clients.set(c.id, c);
     return c;
   }
@@ -62,8 +68,9 @@ export class Host {
 
   info() {
     return {
-      t: 'room', code: this.code, map: this.mapId, host: this.hostId, state: this.state,
-      players: this.members().map(c => ({ id: c.id, name: c.name, color: c.color })),
+      t: 'room', code: this.code, map: this.mapId, host: this.hostId, state: this.state, diff: this.diff, foes: this.foes,
+      mode: this.mode, mission: this.mission, paused: this.paused,
+      players: this.members().map(c => ({ id: c.id, name: c.name, color: c.color, char: c.char })),
     };
   }
 
@@ -94,7 +101,8 @@ export class Host {
   // ------------------------------------------------------------- game --
   start() {
     if (this.state === 'game') return;
-    this.game = new Game(this.mapId);
+    this.game = new Game(this.mapId, { diff: this.diff, foes: this.foes, mode: this.mode, mission: this.mission });
+    this.paused = false;
     for (const c of this.members()) this.game.addPlayer(c.id, c.name, c.color);
     this.state = 'game';
     const info = this.game.startInfo();
@@ -111,26 +119,45 @@ export class Host {
     this.stopTicker = null;
     this.state = 'lobby';
     this.game = null;
+    this.paused = false;
+  }
+
+  setPaused(on) {
+    if (!this.game || this.paused === on) return;
+    this.paused = on;
+    this.pauseSnap = 0;
+    this.broadcast({ t: 'chat', from: '', text: on ? 'The host paused the game.' : 'The host resumed the game.' });
+  }
+
+  sendSnapshot(game) {
+    const common = JSON.stringify({ ...game.snapshotCommon(), pz: this.paused ? 1 : 0 }).slice(0, -1);
+    game.events = [];
+    for (const c of this.members()) this.send(c, common + ',"me":' + JSON.stringify(game.snapshotPrivate(c.id)) + '}');
   }
 
   loop() {
     const game = this.game;
     if (!game) return;
     const now = performance.now();
-    this.acc = Math.min(this.acc + (now - this.last) / 1000, TICK * 8);
+    const elapsed = (now - this.last) / 1000;
     this.last = now;
+    if (this.paused) {
+      // frozen: keep (late joiners) informed a couple of times per second
+      this.acc = 0;
+      this.pauseSnap -= elapsed;
+      if (this.pauseSnap <= 0) { this.pauseSnap = 0.5; this.sendSnapshot(game); }
+      return;
+    }
+    this.acc = Math.min(this.acc + elapsed, TICK * 8);
     try {
       while (this.acc >= TICK && this.game === game) {
         this.acc -= TICK;
         game.tick(TICK);
         this.tickN++;
-        if (this.tickN % SNAPSHOT_EVERY === 0 || game.over) {
-          const common = JSON.stringify(game.snapshotCommon()).slice(0, -1);
-          game.events = [];
-          for (const c of this.members()) this.send(c, common + ',"me":' + JSON.stringify(game.snapshotPrivate(c.id)) + '}');
-        }
+        if (this.tickN % SNAPSHOT_EVERY === 0 || game.over) this.sendSnapshot(game);
         if (game.over) {
-          this.broadcast({ t: 'over', wave: game.wave, score: game.score, kills: game.totalKills, stats: game.stats() });
+          this.broadcast({ t: 'over', wave: game.wave, score: game.score, kills: game.totalKills, stats: game.stats(),
+            mode: game.mode, mission: game.missionIdx, won: game.won, lost: game.lost });
           this.stop();
           this.broadcast(this.info());
           return;
@@ -150,16 +177,34 @@ export class Host {
     switch (m.t) {
       case 'hello':
         c.name = cleanText(m.name, 16) || c.name;
+        c.char = Math.min(MAX_CHARS - 1, Math.max(0, m.char | 0));
         this.send(c, { t: 'welcome', id: c.id });
         break;
       case 'join': this.joinRoom(c); break;
       case 'leave': if (c.inRoom) this.leaveRoom(c); break;
-      case 'in': if (c.inRoom && this.game) this.game.handleInput(c.id, m); break;
+      case 'in': if (c.inRoom && this.game && !this.paused) this.game.handleInput(c.id, m); break;
+      case 'perk': if (c.inRoom && this.game) this.game.choosePerk(c.id, m.i | 0); break;
+      case 'pause': if (c.id === this.hostId && this.state === 'game') this.setPaused(!this.paused); break;
       case 'map':
         if (c.id === this.hostId && this.state === 'lobby' && isMap(m.map)) {
           this.mapId = m.map;
           this.broadcast(this.info());
         }
+        break;
+      case 'char':
+        c.char = Math.min(MAX_CHARS - 1, Math.max(0, m.char | 0));
+        if (c.inRoom) this.broadcast(this.info());
+        break;
+      case 'cfg':
+        if (c.id !== this.hostId || this.state !== 'lobby') break;
+        if (Object.prototype.hasOwnProperty.call(DIFFICULTY, m.diff)) this.diff = m.diff;
+        if (Array.isArray(m.foes)) {
+          const foes = FOE_TYPES.filter(t => m.foes.includes(t));
+          if (foes.some(t => !BOSSES.includes(t))) this.foes = foes;
+        }
+        if (Object.prototype.hasOwnProperty.call(MODES, m.mode)) this.mode = m.mode;
+        if (Number.isInteger(m.mission) && m.mission >= 0 && m.mission < MISSIONS.length) this.mission = m.mission;
+        this.broadcast(this.info());
         break;
       case 'start': if (c.id === this.hostId && this.state === 'lobby') this.start(); break;
       case 'chat': {

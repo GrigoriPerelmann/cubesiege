@@ -1,11 +1,12 @@
 // Client-side game: interpolation, local movement prediction, effects and HUD.
-import { T, LOOKS, BLOOD, GUNS, drawWeaponIcon, shade } from './render.js';
+import { T, LOOKS, CHARS, BLOOD, GUNS, drawWeaponIcon, shade, eliteLook } from './render.js';
 import * as A from './audio.js';
 
 const INTERP = 0.11;          // seconds of interpolation delay
 const SEND_RATE = 1 / 30;
 const HAIR = ['#3a2a1e', '#d0a040', '#1a1a1a', '#8a3a1a', '#e8dcc0', '#5a3a2a', '#2a2a3a', '#b0602a'];
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+const PERK_KEYS = ['z', 'x', 'c'];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, f) => a + (b - a) * f;
 function lerpAngle(a, b, f) {
@@ -21,7 +22,22 @@ export class ClientGame {
     this.myId = start.you;
     this.map = start.map;
     this.weapons = start.weapons;
+    this.upgrades = start.upgrades;
+    this.diff = start.diff;
+    this.ups = 0;
+    this.ws = this.weapons;        // weapon stats with my upgrades applied (fire rate, ammo cap)
     this.etypes = start.enemies;
+    this.mode = start.mode || 'classic';
+    this.mission = start.mission;
+    this.perkDefs = start.perks || [];
+    this.mutDefs = Object.fromEntries((start.mutators || []).map(m => [m.id, m]));
+    this.perks = this.perkDefs.map(() => 0);
+    this.offer = null;            // three PERKS indices to pick from
+    this.picks = 0;
+    this.perkRects = [];          // screen rects of the perk cards (for clicks)
+    this.paused = false;
+    this.isHost = false;
+    this.switchT = 0;             // weapon-switch popup timer
     this.speed = start.speed;
     this.pr = start.pr;
     this.roster = roster;
@@ -73,6 +89,8 @@ export class ClientGame {
 
   // ------------------------------------------------------------ network --
   onSnapshot(s) {
+    if (this.paused && !s.pz) this.off = null;   // resumed: the server clock jumped ahead of ours
+    this.paused = !!s.pz;
     const now = performance.now() / 1000;
     const sample = s.tm - now;
     if (this.off === null || sample > this.off) this.off = sample;
@@ -90,6 +108,12 @@ export class ClientGame {
     for (const st of s.st) if (st[1] !== 1) this.structTiles.add(Math.floor(st[3] / T) * this.map.w + Math.floor(st[2] / T));
     const me = s.me || {};
     if (me.am) this.priv = me;
+    if (me.up !== undefined) this.ups = me.up;
+    // weapon stats / perks are only sent when they change
+    if (me.ws) this.ws = this.weapons.map((w, i) => ({ ...w, rate: me.ws[i][0], ammo: me.ws[i][1] }));
+    if (me.sp) this.speed = me.sp;
+    if (me.pk) this.perks = me.pk;
+    if (me.po !== undefined) { this.offer = me.po || null; this.picks = me.pp || 0; }
     this.un = s.un;
     if (!(this.un >> this.weapon & 1)) this.weapon = 0;
     const mine = s.P.get(this.myId);
@@ -126,7 +150,7 @@ export class ClientGame {
       return {
         id: p[0], x: q ? lerp(q[1], p[1], f) : p[1], y: q ? lerp(q[2], p[2], f) : p[2],
         a: q ? lerpAngle(q[3] / 100, ang, f) : ang, hp: p[4], w: p[5], state: p[6], rev: p[7],
-        shooting: p[8], mult: p[9], downT: p[10], kills: p[11], score: p[12],
+        shooting: p[8], mult: p[9], downT: p[10], kills: p[11], score: p[12], maxhp: p[13] || 100,
       };
     });
     const enemies = b.e.map(e => {
@@ -134,6 +158,7 @@ export class ClientGame {
       return {
         id: e[0], type: this.etypes[e[1]], x: q ? lerp(q[2], e[2], f) : e[2], y: q ? lerp(q[3], e[3], f) : e[3],
         a: q ? lerpAngle(q[4] / 10, e[4] / 10, f) : e[4] / 10, hp: e[5], burn: e[6],
+        elite: e[7] & 1, mode: (e[7] >> 1) & 3, shield: e[7] & 8,
       };
     });
     const projs = b.pr.map(p => {
@@ -141,7 +166,7 @@ export class ClientGame {
       return { id: p[0], kind: p[1], x: q ? lerp(q[2], p[2], f) : p[2], y: q ? lerp(q[3], p[3], f) : p[3],
         vx: q ? p[2] - q[2] : 1, vy: q ? p[3] - q[3] : 0 };
     });
-    return { players, enemies, projs, items: b.it, structs: b.st };
+    return { players, enemies, projs, items: b.it, structs: b.st, hazards: b.hz || [] };
   }
 
   // ------------------------------------------------------------- input --
@@ -150,6 +175,8 @@ export class ClientGame {
     if (k === 'tab') { this.showScores = true; e.preventDefault(); return; }
     if (k === ' ') { this.fireKey = true; this.aimMode = 'keys'; return; }
     this.keys.add(k);
+    const pi = PERK_KEYS.indexOf(k);
+    if (pi >= 0 && this.offer && this.offer[pi] !== undefined) { this.pickPerk(pi); return; }
     const idx = KEYS.indexOf(e.key);
     if (idx >= 0) this.select(idx);
     else if (k === 'q') this.cycle(-1);
@@ -174,9 +201,25 @@ export class ClientGame {
     this.showScores = false;
   }
 
+  pickPerk(i) {
+    this.net.send({ t: 'perk', i });
+    this.offer = null;     // hide until the host confirms (and maybe sends the next offer)
+    A.play('click', 1);
+  }
+
+  // click on a HUD element (perk cards); true if the click was used
+  clickUI(x, y) {
+    if (!this.offer) return false;
+    const i = this.perkRects.findIndex(r => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]);
+    if (i < 0) return false;
+    this.pickPerk(i);
+    return true;
+  }
+
   select(i) {
     if (i < 0 || i >= this.weapons.length || !(this.un >> i & 1) || i === this.weapon) return;
     this.weapon = i;
+    this.switchT = 1.3;
     this.fireCd = Math.max(this.fireCd, 0.12);
     A.play('click', 0.7);
   }
@@ -236,7 +279,8 @@ export class ClientGame {
     const rt = this.serverNow() - INTERP;
     while (this.evq.length && (this.evq[0].tm <= rt || this.evq.length > 6)) this.handleEvents(this.evq.shift().ev);
     this.view = this.interp(rt);
-    const alive = this.myState === 0;
+    this.switchT = Math.max(0, this.switchT - dt);
+    const alive = this.myState === 0 && !this.paused;
     const r = this.r;
 
     // --- local movement
@@ -274,7 +318,7 @@ export class ClientGame {
     const trigger = (this.mouse.down || this.fireKey) && !this.chatting;
 
     // --- local fire feedback (server is authoritative for hits)
-    const w = this.weapons[this.weapon];
+    const w = this.ws[this.weapon];
     this.fireCd -= dt;
     this.recoil = Math.max(0, this.recoil - dt * 6);
     if (alive && trigger) {
@@ -289,7 +333,7 @@ export class ClientGame {
 
     // --- send input
     this.sendT -= dt;
-    if (this.sendT <= 0) {
+    if (this.sendT <= 0 && !this.paused) {
       this.sendT = SEND_RATE;
       this.net.send({ t: 'in', x: +this.me.x.toFixed(1), y: +this.me.y.toFixed(1), a: +this.me.a.toFixed(3),
         f: alive && trigger ? 1 : 0, w: this.weapon });
@@ -307,6 +351,7 @@ export class ClientGame {
         }
       }
       for (const e of this.view.enemies) {
+        if (e.type === 'wraith' && Math.random() < dt * 6) this.addP({ t: 'smoke', x: e.x + (Math.random() - 0.5) * 16, y: e.y - 6, z: 8, vx: 0, vy: 0, vz: 12, life: 0.9, size: 4, grow: 6, color: '#8ac8e8' });
         if (e.burn && Math.random() < dt * 14) this.addP({ t: 'fire', x: e.x + (Math.random() - 0.5) * 14, y: e.y, z: 10 + Math.random() * 14, vx: 0, vy: 0, vz: 40, life: 0.4, size: 5 });
       }
       for (const p of this.view.projs) {
@@ -424,7 +469,7 @@ export class ClientGame {
           const [, x, y, tid, pts, mult, pid] = e;
           const type = this.etypes[tid];
           const L = LOOKS[type];
-          const big = type === 'colossus' ? 3 : type === 'brute' ? 1.8 : 1;
+          const big = type === 'colossus' || type === 'juggernaut' ? 3 : type === 'brute' ? 1.8 : type === 'splitling' ? 0.6 : 1;
           r.splat(x, y, 10 * big, BLOOD[type]);
           for (let i = 0; i < 9 * big; i++) {
             const colr = [L.skin, L.shirt, L.pants, BLOOD[type]][i % 4];
@@ -432,7 +477,7 @@ export class ClientGame {
           }
           for (let i = 0; i < 8; i++) this.addP({ t: 'blood', x, y, z: 14, vx: (Math.random() - 0.5) * 220, vy: (Math.random() - 0.5) * 220, vz: 60 + Math.random() * 120, life: 2, size: 3, grav: 500, color: BLOOD[type], stamp: true });
           this.sound('splat', x, y, type === 'colossus' ? 1 : 0.6);
-          if (type === 'colossus') { this.shake = 14; this.announce('COLOSSUS SLAIN', '', 2.5); }
+          if (type === 'colossus' || type === 'juggernaut') { this.shake = 14; this.announce(`${type.toUpperCase()} SLAIN`, '', 2.5); }
           if (pts > 0) {
             const info = this.roster.get(pid);
             this.texts.push({ x, y: y - 30, text: `+${pts}` + (mult > 1 ? ` x${mult}` : ''), color: info ? info.color : '#fff', life: 1.1, max: 1.1, big: pid === this.myId });
@@ -494,6 +539,52 @@ export class ClientGame {
         }
         case 'bite': if (Math.random() < 0.6) { const en = this.latest.E.get(e[1]); if (en) this.sound('bite', en[2], en[3], 0.6); } break;
         case 'roar': { const en = this.latest.E.get(e[1]); if (en) { this.sound('roar', en[2], en[3], 1); this.shake = Math.max(this.shake, 5); } break; }
+        case 'leap': { const en = this.latest.E.get(e[1]); if (en) this.sound('leap', en[2], en[3], 0.8); break; }
+        case 'slam':
+          this.shake = Math.max(this.shake, 10);
+          this.sound('slam', e[1], e[2], 1);
+          for (let i = 0; i < 16; i++) this.addP({ t: 'smoke', x: e[1] + (Math.random() - 0.5) * 40, y: e[2] + (Math.random() - 0.5) * 20, z: 6, vx: (Math.random() - 0.5) * 120, vy: (Math.random() - 0.5) * 60, vz: 20, life: 0.9, size: 7, grow: 14, drag: 3, color: '#7a7060' });
+          break;
+        case 'shd':
+          this.sound('clank', e[1], e[2], 0.5);
+          for (let i = 0; i < (e[3] ? 14 : 3); i++) this.addP({ t: 'spark', x: e[1], y: e[2], z: 16, vx: (Math.random() - 0.5) * 220, vy: (Math.random() - 0.5) * 220, vz: 0, life: 0.18, size: 2.5, color: '#cfe8ff' });
+          if (e[3]) {
+            this.sound('break', e[1], e[2], 0.8);
+            for (let i = 0; i < 6; i++) this.addP({ t: 'gib', x: e[1], y: e[2], z: 14, vx: (Math.random() - 0.5) * 200, vy: (Math.random() - 0.5) * 200, vz: 80 + Math.random() * 80, life: 2, size: 4, grav: 600, color: '#55657a', stamp: true });
+          }
+          break;
+        case 'heal':
+          this.sound('mend', e[1], e[2], 0.7);
+          this.addP({ t: 'ring', x: e[1], y: e[2], z: 0, vx: 0, vy: 0, vz: 0, life: 0.5, size: 170, color: '120,255,140' });
+          for (let i = 0; i < 14; i++) {
+            const a = Math.random() * Math.PI * 2, d = Math.random() * 150;
+            this.addP({ t: 'spark', x: e[1] + Math.cos(a) * d, y: e[2] + Math.sin(a) * d * 0.7, z: 10, vx: 0, vy: 0, vz: 40, life: 0.7, size: 3, color: '#7fff8f' });
+          }
+          this.lights.push({ x: e[1], y: e[2], r: 200, i: 0.5, life: 0.4, max: 0.4 });
+          break;
+        case 'spit': this.sound('spit', e[1], e[2], 0.7); break;
+        case 'acid':
+          this.sound('acid', e[1], e[2], 0.6);
+          for (let i = 0; i < 10; i++) this.addP({ t: 'blood', x: e[1], y: e[2], z: 8, vx: (Math.random() - 0.5) * 160, vy: (Math.random() - 0.5) * 120, vz: 60 + Math.random() * 60, life: 1.5, size: 3, grav: 500, color: '#9ae040', stamp: true });
+          break;
+        case 'perk': {
+          const pk = this.perkDefs[e[2]];
+          if (!pk) break;
+          if (e[1] === this.myId) {
+            A.play('unlock', 0.8);
+            this.announce(`${pk.name.toUpperCase()}`, pk.desc, 2.2, true);
+          } else this.sysChat(`${this.name(e[1])} took ${pk.name}.`);
+          break;
+        }
+        case 'sw':
+          A.play('revive', e[1] === this.myId ? 1 : 0.4);
+          if (e[1] === this.myId) this.announce('SECOND WIND', 'Back on your feet!', 2, true);
+          else this.sysChat(`${this.name(e[1])} got back up (Second Wind).`);
+          break;
+        case 'win':
+          A.play('win', 1);
+          this.announce('MISSION COMPLETE', this.mission ? this.mission.name : '', 3, false, '#7fff8f');
+          break;
         case 'sum':
           for (let i = 0; i < 20; i++) this.addP({ t: 'smoke', x: e[1] + (Math.random() - 0.5) * 60, y: e[2] + (Math.random() - 0.5) * 40, z: 4, vx: 0, vy: 0, vz: 30, life: 1.2, size: 8, grow: 16, color: '#5a2a6a' });
           break;
@@ -509,7 +600,24 @@ export class ClientGame {
           break;
         case 'dead': this.sysChat(`${this.name(e[1])} bled out.`); break;
         case 'pk': {
-          const [, pid, kind, x, y] = e;
+          const [, pid, kind, x, y, u] = e;
+          if (kind === 3) {
+            A.play('unlock', pid === this.myId ? 1 : 0.6);
+            const ob = this.latest && this.latest.ob;
+            this.announce('FUEL CAN FOUND', ob ? `${ob[1]} / ${ob[2]}${pid !== this.myId ? ` · ${this.name(pid)}` : ''}` : '', 2, true);
+            this.texts.push({ x, y: y - 20, text: '+FUEL', color: '#ff8a50', life: 1.2, max: 1.2, big: true });
+            break;
+          }
+          if (kind === 2) {
+            const up = this.upgrades[u];
+            const wname = this.weapons[up.w].name;
+            if (pid === this.myId) {
+              A.play('unlock', 1);
+              this.announce(`UPGRADE: ${up.name.toUpperCase()}`, `${wname} · ${up.desc}`, 3.2);
+              this.texts.push({ x, y: y - 20, text: up.name, color: '#f2b33a', life: 1.4, max: 1.4, big: true });
+            } else this.sysChat(`${this.name(pid)} got ${up.name} (${wname}).`);
+            break;
+          }
           if (pid === this.myId) {
             A.play(kind === 1 ? 'heal' : 'pickup', 0.9);
             this.texts.push({ x, y: y - 20, text: kind === 1 ? '+HEALTH' : '+AMMO', color: kind === 1 ? '#ff7070' : '#e8d060', life: 1, max: 1 });
@@ -522,13 +630,21 @@ export class ClientGame {
           this.announce('NEW WEAPON', `${w.name}  [${KEYS[e[1]]}]`, 3);
           break;
         }
-        case 'wave':
+        case 'wave': {
           A.play('wave', 1);
-          this.announce(`WAVE ${e[1]}`, e[2] ? 'A Colossus is coming!' : 'Here they come...', 2.8);
+          const bosses = Array.isArray(e[2]) ? e[2].map(t => this.etypes[t]) : [];
+          const sub = bosses.length > 1 ? 'Multiple bosses are coming!' : bosses[0] === 'juggernaut' ? 'The Juggernaut is coming! Dodge its charge.'
+            : bosses[0] ? 'A Colossus is coming!' : 'Here they come...';
+          this.announce(`WAVE ${e[1]}`, sub, 2.8);
+          const muts = (e[3] || []).map(id => this.mutDefs[id]).filter(Boolean);
+          if (muts.length && this.mode === 'gauntlet') {
+            this.announce(muts.map(m => m.name.toUpperCase()).join(' + '), muts.map(m => m.desc).join(' · '), 3.4, true, '#c890ff');
+          }
           break;
+        }
         case 'clear':
           A.play('clear', 1);
-          this.announce('WAVE CLEARED', 'Fallen survivors are back. Grab the supplies!', 2.8);
+          this.announce('WAVE CLEARED', this.mode === 'classic' ? 'Fallen survivors are back. Grab the supplies!' : 'Pick a perk! [Z] [X] [C] or click a card', 2.8);
           break;
       }
     }
@@ -549,9 +665,9 @@ export class ClientGame {
     if (this.chatLines.length > 8) this.chatLines.shift();
   }
 
-  announce(title, sub, dur, small = false) {
+  announce(title, sub, dur, small = false, color = null) {
     this.announces = this.announces.filter(a => a.small !== small || small);
-    this.announces.push({ title, sub, life: dur, max: dur, small });
+    this.announces.push({ title, sub, life: dur, max: dur, small, color });
     if (this.announces.length > 3) this.announces.shift();
   }
 
@@ -631,7 +747,7 @@ export class ClientGame {
           ctx.globalAlpha = 1;
           break;
         case 'ring':
-          ctx.strokeStyle = `rgba(255,220,160,${f * 0.6})`;
+          ctx.strokeStyle = `rgba(${p.color || '255,220,160'},${f * 0.6})`;
           ctx.lineWidth = 3;
           ctx.beginPath(); ctx.ellipse(p.x, p.y, p.size * (1.1 - f), p.size * (1.1 - f) * 0.7, 0, 0, Math.PI * 2); ctx.stroke();
           break;
@@ -701,7 +817,11 @@ export class ClientGame {
     const drawables = [];
     const lights = [];
 
-    // mines (flat, on ground)
+    // acid pools and mines (flat, on ground)
+    for (const h of v.hazards) {
+      r.drawHazard(ctx, h[1], h[2], h[3], h[4], t, h[0]);
+      lights.push({ x: h[1], y: h[2], r: 70, i: 0.35 });
+    }
     for (const s of v.structs) if (s[1] === 1) r.drawMine(ctx, s[2], s[3], t + s[0]);
 
     // players
@@ -717,21 +837,31 @@ export class ClientGame {
       const flash = (this.flash.get('p' + p.id) || 0) > t;
       r.shadow(x, y, 12);
       const rec = isMe ? this.recoil * 3 : 0;
-      drawables.push({ y, draw: c => r.drawChar(c, { x: x - Math.cos(a) * rec, y: y - Math.sin(a) * rec, a, look: LOOKS.player, shirt: info.color, hair: HAIR[p.id % HAIR.length], phase: ph, gun: GUNS[wid], down: p.state === 1, flash, t, id: p.id }) });
+      const look = CHARS[info.char] || CHARS[0];
+      drawables.push({ y, draw: c => r.drawChar(c, { x: x - Math.cos(a) * rec, y: y - Math.sin(a) * rec, a, look, shirt: info.color, hair: look.hair ? HAIR[p.id % HAIR.length] : null, phase: ph, gun: GUNS[wid], down: p.state === 1, flash, t, id: p.id }) });
       lights.push({ x, y: y - 10, r: isMe ? 380 : 300, i: isMe ? 0.95 : 0.8 });
     }
     // enemies
     for (const e of v.enemies) {
-      const L = LOOKS[e.type];
-      const ph = this.walk(e.id, e.x, e.y, e.type === 'sprinter' ? 0.3 : 0.18);
-      r.shadow(e.x, e.y, 10 * L.s * (L.fat ? 1.3 : 1));
-      const flash = (this.flash.get(e.id) || 0) > t;
+      const L = e.elite ? eliteLook(e.type) : LOOKS[e.type];
+      const ph = this.walk(e.id, e.x, e.y, e.type === 'sprinter' || e.type === 'splitling' ? 0.3 : 0.18);
+      if (!L.ghost) r.shadow(e.x, e.y, 10 * L.s * (L.fat ? 1.3 : 1));
+      if (e.elite) {
+        ctx.strokeStyle = `rgba(255,200,60,${0.55 + Math.sin(t * 6 + e.id) * 0.25})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(e.x, e.y, 15 * L.s, 7 * L.s, 0, 0, Math.PI * 2); ctx.stroke();
+        lights.push({ x: e.x, y: e.y - 10, r: 90, i: 0.5 });
+      }
+      // wind-up telegraph: blink red
+      const flash = (this.flash.get(e.id) || 0) > t || (e.mode === 1 && (t * 12) % 1 < 0.5);
+      const boss = e.type === 'colossus' || e.type === 'juggernaut';
       drawables.push({ y: e.y, draw: c => {
-        r.drawChar(c, { x: e.x, y: e.y, a: e.a, look: L, phase: ph, flash, burn: e.burn, t, id: e.id });
-        if (e.hp < 100) r.miniBar(c, e.x, e.y - 44 * L.s - 4, e.hp, e.type === 'colossus' ? '#ff5a2a' : '#d84030');
+        r.drawChar(c, { x: e.x, y: e.y, a: e.a, look: L, phase: e.mode === 3 ? 0 : ph, flash, burn: e.burn, t, id: e.id, shieldUp: e.shield });
+        if (e.hp < 100) r.miniBar(c, e.x, e.y - 44 * L.s - 4, e.hp, boss ? '#ff5a2a' : e.elite ? '#ffc040' : '#d84030');
       } });
-      if (e.type === 'colossus') lights.push({ x: e.x, y: e.y - 30, r: 200, i: 0.6 });
-      if (e.type === 'warlock') lights.push({ x: e.x, y: e.y - 20, r: 70, i: 0.5 });
+      if (boss) lights.push({ x: e.x, y: e.y - 30, r: 200, i: 0.6 });
+      if (e.type === 'warlock' || e.type === 'shaman' || e.type === 'spitter') lights.push({ x: e.x, y: e.y - 20, r: 70, i: 0.5 });
+      if (e.type === 'wraith') lights.push({ x: e.x, y: e.y - 20, r: 60, i: 0.35 });
     }
     // structures
     for (const s of v.structs) {
@@ -740,17 +870,21 @@ export class ClientGame {
         r.shadow(s[2], s[3] + 4, 12);
         drawables.push({ y: s[3] + 15.5, draw: c => r.drawSentry(c, s[2], s[3] + 8, s[5] / 10, s[4], t) });
         lights.push({ x: s[2], y: s[3], r: 110, i: 0.5 });
+      } else if (s[1] === 3) {
+        r.shadow(s[2], s[3] + 6, 18);
+        drawables.push({ y: s[3] + 15.5, draw: c => r.drawGenerator(c, s[2], s[3], s[4], t) });
+        lights.push({ x: s[2], y: s[3] - 10, r: 260, i: 0.8 });
       }
     }
     // items
     for (const it of v.items) {
       drawables.push({ y: it[3], draw: c => r.drawItem(c, it[1], it[2], it[3], t, it[0]) });
-      lights.push({ x: it[2], y: it[3], r: 70, i: 0.5 });
+      lights.push({ x: it[2], y: it[3], r: it[1] >= 2 ? 130 : 70, i: it[1] >= 2 ? 0.8 : 0.5 });
     }
     // projectiles
     for (const p of v.projs) {
       drawables.push({ y: p.y, draw: c => r.drawProj(c, p.kind, p.x, p.y, p.vx, p.vy, t) });
-      lights.push({ x: p.x, y: p.y - 14, r: p.kind === 0 ? 140 : 110, i: 0.8 });
+      lights.push({ x: p.x, y: p.y - 14, r: p.kind === 0 ? 140 : p.kind === 3 ? 50 : p.kind === 4 ? 80 : 110, i: 0.8 });
     }
     r.drawScene(drawables);
     this.drawParticles(ctx);
@@ -759,7 +893,8 @@ export class ClientGame {
     let fl = 0;
     for (const p of this.particles) if (p.t === 'fire' && (fl++ & 3) === 0) lights.push({ x: p.x, y: p.y, r: 90, i: 0.5 });
     for (const l of this.lights) lights.push({ x: l.x, y: l.y, r: l.r, i: l.i * (l.life / l.max) });
-    r.drawLighting(lights, this.myState === 2 ? 0.15 : 0);
+    const dark = this.latest.mu && this.latest.mu.includes('dark') ? 0.3 : 0;
+    r.drawLighting(lights, (this.myState === 2 ? 0.15 : 0) + dark);
 
     // world-space overlays (above lighting so they stay readable)
     r.worldTransform();
@@ -803,12 +938,41 @@ export class ClientGame {
         ctx.stroke();
       }
     }
+    // attack telegraphs and stunned bosses
+    for (const e of v.enemies) {
+      const L = LOOKS[e.type];
+      const top = e.y - 48 * L.s * (e.elite ? 1.15 : 1);
+      if (e.mode === 1) {
+        ctx.font = `900 ${e.type === 'juggernaut' ? 22 : 14}px Rubik, sans-serif`;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillText('!', e.x + 1, top - 2 + 1);
+        ctx.fillStyle = (this.time * 10) % 1 < 0.5 ? '#ff4030' : '#ffd040';
+        ctx.fillText('!', e.x, top - 2);
+      } else if (e.mode === 3) {
+        for (let k = 0; k < 3; k++) {
+          const a = this.time * 5 + k * Math.PI * 2 / 3;
+          ctx.fillStyle = '#ffe060';
+          ctx.fillRect(e.x + Math.cos(a) * 16 - 2, top + 6 + Math.sin(a) * 5 - 2, 4, 4);
+        }
+      }
+    }
     for (const p of v.players) {
       if (p.state === 2) continue;
       const isMe = p.id === this.myId;
       const x = isMe && p.state === 0 ? this.me.x : p.x;
       const y = isMe && p.state === 0 ? this.me.y : p.y;
       const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+      if (isMe && this.switchT > 0 && p.state === 0) {
+        // weapon name pops up over your head when you switch
+        const w = this.weapons[this.weapon];
+        ctx.globalAlpha = Math.min(1, this.switchT * 3);
+        ctx.font = '400 11px Bungee, sans-serif';
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillText(w.name.toUpperCase(), x + 1, y - 52 + 1);
+        ctx.fillStyle = '#f2b33a';
+        ctx.fillText(w.name.toUpperCase(), x, y - 52);
+        ctx.globalAlpha = 1;
+      }
       if (!isMe) {
         ctx.font = '600 9px Rubik, sans-serif';
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -819,8 +983,9 @@ export class ClientGame {
       if (p.state === 0) {
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.fillRect(x - 13, y - 42, 26, 4);
-        ctx.fillStyle = p.hp > 50 ? '#49c46b' : p.hp > 25 ? '#e8b030' : '#e8423f';
-        ctx.fillRect(x - 12, y - 41, 24 * p.hp / 100, 2);
+        const f = p.hp / p.maxhp;
+        ctx.fillStyle = f > 0.5 ? '#49c46b' : f > 0.25 ? '#e8b030' : '#e8423f';
+        ctx.fillRect(x - 12, y - 41, 24 * f, 2);
       } else if (p.state === 1) {
         // revive ring
         const pulse = 0.5 + Math.sin(this.time * 6) * 0.5;
@@ -839,6 +1004,17 @@ export class ClientGame {
         }
       }
     }
+    // upgrade crate labels
+    ctx.font = '700 8px Rubik, sans-serif';
+    for (const it of v.items) {
+      if (it[1] !== 2 || !this.upgrades[it[4]]) continue;
+      const owned = this.ups >> it[4] & 1;
+      const label = this.upgrades[it[4]].name + (owned ? ' (owned)' : '');
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillText(label, it[2] + 0.7, it[3] - 30 + 0.7);
+      ctx.fillStyle = owned ? '#8a8070' : '#ffd36a';
+      ctx.fillText(label, it[2], it[3] - 30);
+    }
     // floating texts
     for (const t of this.texts) {
       const f = t.life / t.max;
@@ -853,6 +1029,16 @@ export class ClientGame {
   }
 
   // --------------------------------------------------------------- HUD --
+  objectiveText(ob) {
+    switch (ob[0]) {
+      case 'waves': return ob[1] ? `Objective: survive wave ${ob[1]} of ${ob[2]}` : `Objective: survive ${ob[2]} waves`;
+      case 'defend': return `Generator ${ob[1]}%  ·  wave ${ob[3]} of ${ob[2]}`;
+      case 'collect': return `Fuel cans found: ${ob[1]} / ${ob[2]}`;
+      case 'holdout': return `Hold out: ${Math.floor(ob[1] / 60)}:${String(ob[1] % 60).padStart(2, '0')}`;
+    }
+    return '';
+  }
+
   drawHUD(ctx, v) {
     const r = this.r;
     const W = r.cw, H = r.ch;
@@ -862,14 +1048,14 @@ export class ClientGame {
     const me = v.players.find(p => p.id === this.myId);
 
     // vignette + damage overlay are CSS layers (cheap for the compositor)
-    const lowHp = me && me.state === 0 && me.hp < 35 ? (0.25 + Math.sin(this.time * 5) * 0.12) : 0;
+    const lowHp = me && me.state === 0 && me.hp < me.maxhp * 0.35 ? (0.25 + Math.sin(this.time * 5) * 0.12) : 0;
     const hurt = Math.max(this.hurtT * 0.6, lowHp, me && me.state === 1 ? 0.45 : 0);
     this.hooks.setHurt(Math.min(1, hurt * 1.6));
 
-    const panel = (x, y, w, h) => {
-      ctx.fillStyle = 'rgba(14,12,10,0.72)';
+    const panel = (x, y, w, h, bg = 'rgba(14,12,10,0.72)', line = 'rgba(255,255,255,0.08)') => {
+      ctx.fillStyle = bg;
       ctx.fillRect(x, y, w, h);
-      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.strokeStyle = line;
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
     };
@@ -881,31 +1067,49 @@ export class ClientGame {
       ctx.fillStyle = color;
       ctx.fillText(str, x, y);
     };
+    const hpColor = f => (f > 0.5 ? '#49c46b' : f > 0.25 ? '#e8b030' : '#e8423f');
 
-    // --- wave panel (top-left)
+    // --- wave / objective panel (top-left)
     const pad = 14 * u;
-    panel(pad, pad, 220 * u, 74 * u);
+    const ob = s.ob;
+    const muts = (s.mu || []).map(id => this.mutDefs[id]).filter(Boolean);
+    const lw = 240 * u;
+    const panH = (74 + (ob ? 20 : 0) + muts.length * 16) * u;
+    panel(pad, pad, lw, panH);
     text(s.wv ? `WAVE ${s.wv}` : 'GET READY', pad + 12 * u, pad + 32 * u, 26 * u, '#f2b33a', 'left', 400, 'Bungee');
     text(s.ws ? `${s.left} undead remaining` : `Next wave in ${Math.ceil(s.wt)}s`, pad + 12 * u, pad + 52 * u, 13 * u, '#efe6d8', 'left', 600);
     text(`TEAM SCORE ${s.sc.toLocaleString()}`, pad + 12 * u, pad + 67 * u, 11 * u, '#9c917f', 'left', 600);
+    const tag = this.mission ? `MISSION ${this.mission.idx + 1}` : this.mode.toUpperCase();
+    text(`${tag} · ${(this.diff || '').toUpperCase()}`, pad + lw - 12 * u, pad + 22 * u, 9 * u, '#6b6255', 'right', 800);
+    let ly = pad + 67 * u;
+    if (ob) {
+      ly += 20 * u;
+      const warn = ob[0] === 'defend' && ob[1] < 35 && (this.time * 3) % 1 < 0.5;
+      text(this.objectiveText(ob), pad + 12 * u, ly, 12 * u, warn ? '#ff6050' : '#8af0a0', 'left', 800);
+    }
+    for (const m of muts) {
+      ly += 16 * u;
+      text(`☠ ${m.name.toUpperCase()}`, pad + 12 * u, ly, 10.5 * u, '#c890ff', 'left', 800);
+      text(m.desc, pad + lw - 12 * u, ly, 9 * u, '#8a7aa0', 'right', 600);
+    }
 
     // --- team list
-    let ty = pad + 84 * u;
+    let ty = pad + panH + 10 * u;
     for (const p of v.players) {
       const info = this.roster.get(p.id) || { color: '#888', name: '?' };
-      panel(pad, ty, 220 * u, 26 * u);
+      panel(pad, ty, lw, 26 * u);
       ctx.fillStyle = info.color;
       ctx.fillRect(pad + 6 * u, ty + 6 * u, 14 * u, 14 * u);
       text(info.name + (p.id === this.myId ? ' (you)' : ''), pad + 26 * u, ty + 13 * u, 11 * u, '#efe6d8', 'left', 600);
-      const bx = pad + 26 * u, bw = 120 * u;
+      const bx = pad + 26 * u, bw = 130 * u;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(bx, ty + 16 * u, bw, 5 * u);
       if (p.state === 0) {
-        ctx.fillStyle = p.hp > 50 ? '#49c46b' : p.hp > 25 ? '#e8b030' : '#e8423f';
-        ctx.fillRect(bx, ty + 16 * u, bw * p.hp / 100, 5 * u);
-        if (p.mult > 1) text(`x${p.mult}`, pad + 210 * u, ty + 19 * u, 13 * u, '#f2b33a', 'right', 800);
+        ctx.fillStyle = hpColor(p.hp / p.maxhp);
+        ctx.fillRect(bx, ty + 16 * u, bw * p.hp / p.maxhp, 5 * u);
+        if (p.mult > 1) text(`x${p.mult}`, pad + lw - 10 * u, ty + 19 * u, 13 * u, '#f2b33a', 'right', 800);
       } else {
-        text(p.state === 1 ? `DOWN ${p.downT}s` : 'DEAD', pad + 210 * u, ty + 19 * u, 11 * u, p.state === 1 ? '#ff7060' : '#888', 'right', 800);
+        text(p.state === 1 ? `DOWN ${p.downT}s` : 'DEAD', pad + lw - 10 * u, ty + 19 * u, 11 * u, p.state === 1 ? '#ff7060' : '#888', 'right', 800);
       }
       ty += 30 * u;
     }
@@ -922,10 +1126,54 @@ export class ClientGame {
     ctx.fillStyle = '#f2b33a';
     ctx.fillRect(cx + 14 * u, pad + 56 * u, 142 * u * (this.priv.ct || 0) / 100, 6 * u);
     text(`${this.ping | 0} ms`, W - pad, pad + 90 * u, 10 * u, '#6b6255', 'right', 600);
+    // owned perks
+    let px = W - pad;
+    this.perkDefs.forEach((pk, i) => {
+      const rk = this.perks[i];
+      if (!rk) return;
+      const sz = 24 * u;
+      px -= sz + 4 * u;
+      panel(px, pad + 98 * u, sz, sz, 'rgba(14,12,10,0.8)', pk.color);
+      text(pk.icon, px + sz / 2, pad + 98 * u + 17 * u, 15 * u, pk.color, 'center', 800);
+      if (rk > 1) text(`${rk}`, px + sz - 2 * u, pad + 98 * u + sz - 2 * u, 9 * u, '#fff', 'right', 800);
+    });
+
+    // --- perk offer (right side)
+    this.perkRects = [];
+    if (this.offer && me) {
+      const cw = 270 * u, ch = 64 * u;
+      const x0 = W - pad - cw;
+      let y0 = Math.max(pad + 132 * u, H * 0.3);
+      const pulse = 0.5 + Math.sin(this.time * 5) * 0.5;
+      text(`CHOOSE A PERK${this.picks > 1 ? ` (${this.picks})` : ''}`, x0 + cw, y0 + 12 * u, 15 * u, `rgba(242,179,58,${0.7 + pulse * 0.3})`, 'right', 400, 'Bungee');
+      y0 += 22 * u;
+      this.offer.forEach((k, i) => {
+        const pk = this.perkDefs[k];
+        if (!pk) return;
+        const rk = this.perks[k];
+        const hover = this.mouse.x >= x0 && this.mouse.x <= x0 + cw && this.mouse.y >= y0 && this.mouse.y <= y0 + ch;
+        panel(x0, y0, cw, ch, hover ? 'rgba(60,44,14,0.95)' : 'rgba(22,18,12,0.92)', hover ? '#f2b33a' : 'rgba(242,179,58,0.45)');
+        panel(x0 + 8 * u, y0 + ch / 2 - 13 * u, 26 * u, 26 * u, 'rgba(242,179,58,0.18)', '#f2b33a');
+        text(PERK_KEYS[i].toUpperCase(), x0 + 21 * u, y0 + ch / 2 + 6 * u, 15 * u, '#f2b33a', 'center', 400, 'Bungee');
+        text(pk.icon, x0 + 54 * u, y0 + ch / 2 + 9 * u, 26 * u, pk.color, 'center', 800);
+        text(pk.name, x0 + 74 * u, y0 + 22 * u, 13 * u, '#efe6d8', 'left', 800);
+        text(pk.max > 1 ? `Lv ${rk + 1}/${pk.max}` : 'ONCE', x0 + cw - 10 * u, y0 + 22 * u, 10 * u, '#9c917f', 'right', 800);
+        // wrap the description onto two lines
+        ctx.font = `600 ${10.5 * u}px Rubik, sans-serif`;
+        const words = pk.desc.split(' '), lines = [''];
+        for (const wd of words) {
+          const t = lines[lines.length - 1] ? `${lines[lines.length - 1]} ${wd}` : wd;
+          if (ctx.measureText(t).width > cw - 86 * u && lines[lines.length - 1]) lines.push(wd); else lines[lines.length - 1] = t;
+        }
+        lines.slice(0, 2).forEach((ln, j) => text(ln, x0 + 74 * u, y0 + (38 + j * 13) * u, 10.5 * u, '#b8ad98', 'left', 600));
+        this.perkRects.push([x0, y0, cw, ch]);
+        y0 += ch + 6 * u;
+      });
+    }
 
     // --- weapon bar (bottom-centre)
     const n = this.weapons.length;
-    const sw = 66 * u, shh = 54 * u, gap = 5 * u;
+    const sw = 64 * u, shh = 56 * u, gap = 5 * u;
     const total = n * sw + (n - 1) * gap;
     let wx = W / 2 - total / 2;
     const wy = H - pad - shh;
@@ -937,51 +1185,93 @@ export class ClientGame {
       const f = clamp((s.sc - prev) / (w.unlock - prev), 0, 1);
       const bw = Math.min(total, 360 * u);
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(W / 2 - bw / 2, wy - 16 * u, bw, 6 * u);
+      ctx.fillRect(W / 2 - bw / 2, wy - 20 * u, bw, 6 * u);
       ctx.fillStyle = '#5fb0ff';
-      ctx.fillRect(W / 2 - bw / 2, wy - 16 * u, bw * f, 6 * u);
-      text(`Next unlock: ${w.name} at ${w.unlock.toLocaleString()} team pts`, W / 2, wy - 22 * u, 11 * u, '#bcd8f0', 'center', 600);
+      ctx.fillRect(W / 2 - bw / 2, wy - 20 * u, bw * f, 6 * u);
+      text(`Next unlock: ${w.name} at ${w.unlock.toLocaleString()} team pts`, W / 2, wy - 26 * u, 11 * u, '#bcd8f0', 'center', 600);
     }
     for (let i = 0; i < n; i++) {
       const w = this.weapons[i];
       const unl = this.un >> i & 1;
       const sel = i === this.weapon;
-      const y0 = wy - (sel ? 6 * u : 0);
-      ctx.fillStyle = sel ? 'rgba(60,44,14,0.9)' : 'rgba(14,12,10,0.75)';
-      ctx.fillRect(wx, y0, sw, shh);
-      ctx.strokeStyle = sel ? '#f2b33a' : 'rgba(255,255,255,0.1)';
-      ctx.lineWidth = sel ? 2 : 1;
-      ctx.strokeRect(wx + 0.5, y0 + 0.5, sw - 1, shh - 1);
-      text(KEYS[i], wx + 5 * u, y0 + 13 * u, 10 * u, sel ? '#f2b33a' : '#9c917f', 'left', 800);
+      const y0 = wy - (sel ? 10 * u : 0);
+      if (sel) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(242,179,58,0.8)';
+        ctx.shadowBlur = 14 * u;
+        ctx.fillStyle = 'rgba(90,64,16,0.95)';
+        ctx.fillRect(wx, y0, sw, shh + 10 * u);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = unl ? 'rgba(20,17,14,0.85)' : 'rgba(14,12,10,0.6)';
+        ctx.fillRect(wx, y0, sw, shh);
+      }
+      ctx.strokeStyle = sel ? '#ffd36a' : unl ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = sel ? 2.5 : 1;
+      ctx.strokeRect(wx + 0.5, y0 + 0.5, sw - 1, (sel ? shh + 10 * u : shh) - 1);
+      text(KEYS[i], wx + 5 * u, y0 + 13 * u, (sel ? 12 : 10) * u, sel ? '#ffd36a' : '#9c917f', 'left', 800);
       if (unl) {
         const am = this.priv.am[i];
-        drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 24 * u, u * 1.05, am === 0 ? '#6b6255' : '#efe6d8');
-        text(am < 0 ? '∞' : `${am}`, wx + sw / 2, y0 + 47 * u, 12 * u, am === 0 ? '#e8423f' : '#f2e6c8', 'center', 800);
+        drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 26 * u, u * (sel ? 1.2 : 1.05), am === 0 ? '#6b6255' : sel ? '#fff4d8' : '#d8cfbe');
+        text(am < 0 ? '∞' : `${am}`, wx + sw / 2, y0 + 49 * u, (sel ? 13 : 11.5) * u, am === 0 ? '#e8423f' : sel ? '#ffffff' : '#d8cfbe', 'center', 800);
+        let pip = 0;
+        this.upgrades.forEach((up, k) => {
+          if (up.w !== i || !(this.ups >> k & 1)) return;
+          ctx.fillStyle = '#f2b33a';
+          ctx.fillRect(wx + sw - (8 + pip * 7) * u, y0 + 5 * u, 5 * u, 5 * u);
+          pip++;
+        });
       } else {
-        drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 24 * u, u * 1.05, '#3a352e');
-        text('LOCKED', wx + sw / 2, y0 + 47 * u, 9 * u, '#6b6255', 'center', 800);
+        drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 26 * u, u * 1.05, '#3a352e');
+        text(w.unlock >= 1000 ? `${(w.unlock / 1000).toFixed(1).replace('.0', '')}k pts` : `${w.unlock} pts`, wx + sw / 2, y0 + 49 * u, 9 * u, '#6b6255', 'center', 800);
       }
       wx += sw + gap;
     }
 
-    // --- my health (bottom-left)
+    // --- current weapon + health card (bottom-left)
+    let cardTop = H - pad;
     if (me) {
-      const hx = pad, hy = H - pad - 46 * u;
-      panel(hx, hy, 220 * u, 46 * u);
-      text('HEALTH', hx + 10 * u, hy + 16 * u, 10 * u, '#9c917f', 'left', 800);
-      text(me.state === 0 ? `${me.hp}` : me.state === 1 ? 'DOWN' : 'DEAD', hx + 210 * u, hy + 16 * u, 12 * u, '#efe6d8', 'right', 800);
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(hx + 10 * u, hy + 24 * u, 200 * u, 12 * u);
+      const w = this.weapons[this.weapon];
+      const ws = this.ws[this.weapon];
+      const mods = this.upgrades.filter((up, k) => up.w === this.weapon && this.ups >> k & 1).map(up => up.name);
+      const cw = 280 * u, ch = (mods.length ? 122 : 108) * u;
+      const hx = pad, hy = H - pad - ch;
+      cardTop = hy;
+      panel(hx, hy, cw, ch, 'rgba(14,12,10,0.8)', this.switchT > 0 ? `rgba(242,179,58,${0.3 + this.switchT * 0.5})` : 'rgba(255,255,255,0.1)');
+      // big icon
+      const am = this.priv.am[this.weapon];
+      panel(hx + 8 * u, hy + 8 * u, 96 * u, 58 * u, 'rgba(0,0,0,0.45)', 'rgba(255,255,255,0.06)');
+      drawWeaponIcon(ctx, w.id, hx + 56 * u, hy + 38 * u, u * 2.1, am === 0 ? '#6b6255' : '#fff4d8');
+      text(w.name.toUpperCase(), hx + 114 * u, hy + 26 * u, 14 * u, '#f2b33a', 'left', 400, 'Bungee');
+      const low = am >= 0 && ws.ammo > 0 && am <= ws.ammo * 0.2;
+      const blink = (this.time * 4) % 1 < 0.6;
+      const amColor = am === 0 ? '#e8423f' : low ? (blink ? '#ff7050' : '#efe6d8') : '#ffffff';
+      text(am < 0 ? '∞' : `${am}`, hx + 114 * u, hy + 56 * u, 26 * u, amColor, 'left', 400, 'Bungee');
+      if (am >= 0) {
+        ctx.font = `400 ${26 * u}px Bungee, sans-serif`;
+        const aw = ctx.measureText(`${am}`).width;
+        text(am === 0 ? 'EMPTY' : low ? 'LOW AMMO' : `/ ${ws.ammo}`, hx + 120 * u + aw, hy + 55 * u, 11 * u, am === 0 || low ? '#ff7050' : '#9c917f', 'left', 800);
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.fillRect(hx + 114 * u, hy + 62 * u, 156 * u, 4 * u);
+        ctx.fillStyle = low || am === 0 ? '#e8423f' : '#e8d060';
+        ctx.fillRect(hx + 114 * u, hy + 62 * u, 156 * u * clamp(am / ws.ammo, 0, 1), 4 * u);
+      }
+      if (mods.length) text(`★ ${mods.join(' · ')}`, hx + 10 * u, hy + 84 * u, 10.5 * u, '#ffd36a', 'left', 700);
+      // health
+      const hb = hy + ch - 22 * u;
       const hp = me.state === 0 ? me.hp : 0;
-      ctx.fillStyle = hp > 50 ? '#49c46b' : hp > 25 ? '#e8b030' : '#e8423f';
-      ctx.fillRect(hx + 10 * u, hy + 24 * u, 200 * u * hp / 100, 12 * u);
+      text('HEALTH', hx + 10 * u, hb - 5 * u, 10 * u, '#9c917f', 'left', 800);
+      text(me.state === 0 ? `${me.hp} / ${me.maxhp}` : me.state === 1 ? 'DOWN' : 'DEAD', hx + cw - 10 * u, hb - 5 * u, 11 * u, '#efe6d8', 'right', 800);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(hx + 10 * u, hb, cw - 20 * u, 12 * u);
+      ctx.fillStyle = hpColor(hp / me.maxhp);
+      ctx.fillRect(hx + 10 * u, hb, (cw - 20 * u) * hp / me.maxhp, 12 * u);
       ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      ctx.fillRect(hx + 10 * u, hy + 24 * u, 200 * u * hp / 100, 3 * u);
-      text(`${this.weapons[this.weapon].name}`, hx + 10 * u, hy - 8 * u, 13 * u, '#f2b33a', 'left', 800);
+      ctx.fillRect(hx + 10 * u, hb, (cw - 20 * u) * hp / me.maxhp, 3 * u);
     }
 
     // --- chat
-    let cy = H - pad - 80 * u;
+    let cy = cardTop - 14 * u;
     const lines = this.chatLines.filter(c => this.time - c.t < 10 || this.chatting);
     for (let i = lines.length - 1; i >= 0; i--) {
       const c = lines[i];
@@ -1010,20 +1300,58 @@ export class ClientGame {
       ctx.drawImage(mm, mx0, my0, mw, mh);
       ctx.imageSmoothingEnabled = true;
       const k = ms * mm.width / (this.map.w * T);
-      ctx.fillStyle = '#ff4a3a';
-      for (const e of v.enemies) ctx.fillRect(mx0 + e.x * k - 1, my0 + e.y * k - 1, e.type === 'colossus' ? 5 : 2.5, e.type === 'colossus' ? 5 : 2.5);
-      ctx.fillStyle = '#e8d060';
-      for (const it of v.items) ctx.fillRect(mx0 + it[2] * k - 1, my0 + it[3] * k - 1, 2.5, 2.5);
+      for (const e of v.enemies) {
+        const big = e.type === 'colossus' || e.type === 'juggernaut';
+        ctx.fillStyle = e.elite ? '#ffc040' : '#ff4a3a';
+        ctx.fillRect(mx0 + e.x * k - 1, my0 + e.y * k - 1, big ? 5 : 2.5, big ? 5 : 2.5);
+      }
+      for (const it of v.items) {
+        if (it[1] === 3 && (this.time * 3 | 0) % 2) continue;
+        const big = it[1] >= 2 ? 4.5 : 2.5;
+        ctx.fillStyle = it[1] === 3 ? '#ff7a40' : it[1] === 2 ? '#ffb020' : '#e8d060';
+        ctx.fillRect(mx0 + it[2] * k - big / 2, my0 + it[3] * k - big / 2, big, big);
+      }
+      for (const st of v.structs) {
+        if (st[1] !== 3) continue;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(mx0 + st[2] * k - 4, my0 + st[3] * k - 4, 8, 8);
+        ctx.fillStyle = '#ffd030';
+        ctx.fillRect(mx0 + st[2] * k - 3, my0 + st[3] * k - 3, 6, 6);
+      }
       for (const p of v.players) {
         if (p.state === 2) continue;
         const info = this.roster.get(p.id) || { color: '#fff' };
-        const px = p.id === this.myId ? this.me.x : p.x, py = p.id === this.myId ? this.me.y : p.y;
+        const ppx = p.id === this.myId ? this.me.x : p.x, ppy = p.id === this.myId ? this.me.y : p.y;
         ctx.fillStyle = '#000';
-        ctx.fillRect(mx0 + px * k - 3, my0 + py * k - 3, 6, 6);
+        ctx.fillRect(mx0 + ppx * k - 3, my0 + ppy * k - 3, 6, 6);
         ctx.fillStyle = p.state === 1 && (this.time * 4 | 0) % 2 ? '#fff' : info.color;
-        ctx.fillRect(mx0 + px * k - 2, my0 + py * k - 2, 4, 4);
+        ctx.fillRect(mx0 + ppx * k - 2, my0 + ppy * k - 2, 4, 4);
       }
       ctx.globalAlpha = 1;
+    }
+
+    // --- pointers to off-screen objectives and downed teammates
+    const marks = [];
+    for (const it of v.items) if (it[1] === 3) marks.push([it[2], it[3], '#ff7a40', 'FUEL']);
+    for (const st of v.structs) if (st[1] === 3) marks.push([st[2], st[3], '#ffd030', 'GEN']);
+    for (const p of v.players) if (p.state === 1 && p.id !== this.myId) marks.push([p.x, p.y, '#ff5040', 'REVIVE']);
+    const m0 = 34 * u;
+    for (const [x, y, color, label] of marks) {
+      const [sx, sy] = r.toScreen(x, y);
+      if (sx > m0 && sx < W - m0 && sy > m0 && sy < H - m0) continue;
+      const dx = sx - W / 2, dy = sy - H / 2;
+      const f = Math.min((W / 2 - m0) / Math.abs(dx || 1e-6), (H / 2 - m0) / Math.abs(dy || 1e-6));
+      const ax = W / 2 + dx * f, ay = H / 2 + dy * f, ang = Math.atan2(dy, dx);
+      const bob = Math.sin(this.time * 6) * 3 * u;
+      ctx.save();
+      ctx.translate(ax + Math.cos(ang) * bob, ay + Math.sin(ang) * bob);
+      ctx.rotate(ang);
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.beginPath(); ctx.moveTo(15 * u, 0); ctx.lineTo(-9 * u, -11 * u); ctx.lineTo(-9 * u, 11 * u); ctx.fill();
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.moveTo(12 * u, 0); ctx.lineTo(-7 * u, -8 * u); ctx.lineTo(-7 * u, 8 * u); ctx.fill();
+      ctx.restore();
+      text(label, ax - Math.cos(ang) * 22 * u, ay - Math.sin(ang) * 22 * u + 4 * u, 9 * u, color, 'center', 800);
     }
 
     // --- announcements
@@ -1033,7 +1361,8 @@ export class ClientGame {
       const alpha = Math.min(1, (1 - f) * 8, f * 4);
       const pop = 1 + Math.max(0, (f - 0.85)) * 2;
       ctx.globalAlpha = alpha;
-      text(a.title, W / 2, ay, (a.small ? 22 : 46) * u * pop, a.title.startsWith('WAVE C') || a.title.startsWith('NEW') ? '#f2b33a' : '#e8423f', 'center', 400, 'Bungee');
+      const col = a.color || (a.title.startsWith('WAVE C') || a.title.startsWith('NEW') ? '#f2b33a' : '#e8423f');
+      text(a.title, W / 2, ay, (a.small ? 22 : 46) * u * pop, col, 'center', 400, 'Bungee');
       if (a.sub) text(a.sub, W / 2, ay + 28 * u, 16 * u, '#efe6d8', 'center', 600);
       ctx.globalAlpha = 1;
       ay += 80 * u;
@@ -1072,6 +1401,15 @@ export class ClientGame {
       });
     }
 
+    // --- pause screen
+    if (this.paused) {
+      ctx.fillStyle = 'rgba(6,5,4,0.6)';
+      ctx.fillRect(0, 0, W, H);
+      text('PAUSED', W / 2, H * 0.42, 64 * u, '#f2b33a', 'center', 400, 'Bungee');
+      text(this.isHost ? 'Press Esc to resume' : 'The host paused the game. Waiting for them to resume...', W / 2, H * 0.42 + 40 * u, 18 * u, '#efe6d8', 'center', 600);
+      text('Chat (Enter) and perk picks still work', W / 2, H * 0.42 + 66 * u, 13 * u, '#9c917f', 'center', 600);
+    }
+
     // --- crosshair
     if (!this.chatting && this.aimMode === 'mouse') {
       const { x, y } = this.mouse;
@@ -1095,4 +1433,3 @@ export class ClientGame {
     }
   }
 }
-
