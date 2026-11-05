@@ -234,6 +234,17 @@ public/js/audio.js  procedural WebAudio sound effects
 * Blood and scorch marks are painted onto the floor texture, so the arena gets messier as the
   fight goes on.
 
+### Deploying to GitHub Pages
+
+`.github/workflows/deploy-boxhead.yml` (at the repository root) publishes `Boxhead/public/` on every
+push to `main` that changes it. No build step is needed: Pages serves the ES modules as they are.
+
+1. Push this repository to GitHub.
+2. In the repository, open **Settings → Pages** and set **Source** to **GitHub Actions**.
+3. Push a change to `Boxhead/public/`, or start the workflow by hand from the **Actions** tab.
+
+The game then runs at `https://<user>.github.io/<repo>/`, and invite links work from there.
+
 ### Development
 
 Edit the files in `public/`, then serve that folder (ES modules don't load from `file://`):
