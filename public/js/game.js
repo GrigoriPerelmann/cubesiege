@@ -1318,7 +1318,8 @@ export class ClientGame {
     const hurt = Math.max(this.hurtT * 0.6, lowHp, me && me.state === 1 ? 0.45 : 0);
     this.hooks.setHurt(Math.min(1, hurt * 1.6));
 
-    const panel = (x, y, w, h, bg = 'rgba(14,12,10,0.72)', line = 'rgba(255,255,255,0.08)') => {
+    // on small screens the panels sit over the action, so let more of it show through
+    const panel = (x, y, w, h, bg = touch ? 'rgba(14,12,10,0.42)' : 'rgba(14,12,10,0.72)', line = 'rgba(255,255,255,0.08)') => {
       ctx.fillStyle = bg;
       ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = line;
@@ -1460,11 +1461,12 @@ export class ClientGame {
       const prev = Math.max(...this.weapons.filter((x, i) => this.un >> i & 1).map(x => x.unlock));
       const f = clamp((s.sc - prev) / (w.unlock - prev), 0, 1);
       const bw = Math.min(touch ? room : total, 360 * u);
+      const uy = wy - (touch ? 32 : 20) * u;   // on touch the health bar sits below it
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(W / 2 - bw / 2, wy - 20 * u, bw, 6 * u);
+      ctx.fillRect(W / 2 - bw / 2, uy, bw, (touch ? 3 : 6) * u);
       ctx.fillStyle = '#5fb0ff';
-      ctx.fillRect(W / 2 - bw / 2, wy - 20 * u, bw * f, 6 * u);
-      text(`Next unlock: ${w.name} at ${w.unlock.toLocaleString()} team pts`, W / 2, wy - 26 * u, 11 * u, '#bcd8f0', 'center', 600);
+      ctx.fillRect(W / 2 - bw / 2, uy, bw * f, (touch ? 3 : 6) * u);
+      text(`Next unlock: ${w.name} at ${w.unlock.toLocaleString()} team pts`, W / 2, uy - 6 * u, 11 * u, '#bcd8f0', 'center', 600);
     }
     for (let i = 0; i < n; i++) {
       const w = this.weapons[i];
@@ -1481,7 +1483,7 @@ export class ClientGame {
         ctx.fillRect(wx, y0, sw, shh + 10 * u);
         ctx.restore();
       } else {
-        ctx.fillStyle = unl ? 'rgba(20,17,14,0.85)' : 'rgba(14,12,10,0.6)';
+        ctx.fillStyle = touch ? 'rgba(20,17,14,0.5)' : unl ? 'rgba(20,17,14,0.85)' : 'rgba(14,12,10,0.6)';
         ctx.fillRect(wx, y0, sw, shh);
       }
       ctx.strokeStyle = sel ? '#ffd36a' : unl ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)';
@@ -1491,7 +1493,7 @@ export class ClientGame {
       if (unl) {
         const am = this.priv.am[i];
         drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 26 * u, iconU * (sel ? 1.2 : 1.05), am === 0 ? '#6b6255' : sel ? '#fff4d8' : '#d8cfbe');
-        text(am < 0 ? '∞' : `${am}`, wx + sw / 2, y0 + 49 * u, (sel ? 13 : 11.5) * u, am === 0 ? '#e8423f' : sel ? '#ffffff' : '#d8cfbe', 'center', 800);
+        text(am < 0 ? '∞' : `${am}`, wx + sw / 2, y0 + 49 * u, (sel ? 13 : 11.5) * u, am === 0 ? '#e8423f' : touch && sel && am > 0 && am <= this.ws[i].ammo * 0.2 ? '#ff7050' : sel ? '#ffffff' : '#d8cfbe', 'center', 800);
         let pip = 0;
         this.upgrades.forEach((up, k) => {
           if (up.w !== i || !(this.ups >> k & 1)) return;
@@ -1508,15 +1510,23 @@ export class ClientGame {
 
     // --- current weapon + health card (bottom-left)
     let cardTop = touch ? H * 0.72 : H - pad;
-    let cardBottom = pad;
-    if (me) {
+    if (me && touch) {
+      // on touch the big card would cover the undead: the weapon bar already shows the gun and its ammo,
+      // so all that's left is a slim health bar right above it
+      const bw = Math.min(room, 360 * u), bx = W / 2 - bw / 2, by = wy - 24 * u, bh = 9 * u;
+      const hp = me.state === 0 ? me.hp : 0, f = hp / me.maxhp;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = hpColor(f);
+      ctx.fillRect(bx, by, bw * f, bh);
+      text(me.state === 0 ? `${me.hp}` : me.state === 1 ? 'DOWN' : 'DEAD', bx - 6 * u, by + bh, 14 * u, f > 0.25 ? '#efe6d8' : '#ff7050', 'right', 800);
+    } else if (me) {
       const w = this.weapons[this.weapon];
       const ws = this.ws[this.weapon];
       const mods = this.upgrades.filter((up, k) => up.w === this.weapon && this.ups >> k & 1).map(up => up.name);
       const cw = 280 * u, ch = (mods.length ? 122 : 108) * u;
-      // on touch it moves to the top centre: thumbs cover the bottom corners
-      const hx = touch ? W / 2 - cw / 2 : pad, hy = touch ? pad : H - pad - ch;
-      if (touch) cardBottom = hy + ch; else cardTop = hy;
+      const hx = pad, hy = H - pad - ch;
+      cardTop = hy;
       panel(hx, hy, cw, ch, 'rgba(14,12,10,0.8)', this.switchT > 0 ? `rgba(242,179,58,${0.3 + this.switchT * 0.5})` : 'rgba(255,255,255,0.1)');
       // big icon
       const am = this.priv.am[this.weapon];
@@ -1653,7 +1663,7 @@ export class ClientGame {
 
     // --- announcements
     // kept in the top third, clear of the player and the prompts over their head
-    let ay = touch ? Math.max(H * 0.15, cardBottom + 34 * u) : H * 0.15;
+    let ay = H * 0.15;
     for (const a of this.announces) {
       const f = a.life / a.max;
       const alpha = Math.min(1, (1 - f) * 8, f * 4);

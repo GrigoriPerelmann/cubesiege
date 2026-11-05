@@ -184,7 +184,7 @@ body.touch #chatIn { left: 50%; top: 8px; bottom: auto; transform: translateX(-5
 
 #touchUI { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 3; }
 body.touch.playing #touchUI { display: block; }
-.stick { position: absolute; width: 104px; height: 104px; margin: -52px 0 0 -52px; border-radius: 50%;
+.stick { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.05); opacity: 0.45; }
 .stick.on { opacity: 1; }
 .stick i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;

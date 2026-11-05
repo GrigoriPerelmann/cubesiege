@@ -6,9 +6,12 @@
 // Touching the game turns them on; using a real keyboard or mouse (a tablet with a keyboard) turns them off.
 import * as A from './audio.js';
 
-const RADIUS = 52;          // how far a stick travels, in CSS pixels
-const MOVE_DEAD = 8;        // ignore a resting thumb
-const AIM_DEAD = 16;        // less than this keeps the current aim, so a plain hold fires where you face
+const RADIUS = 60;          // how far a stick travels, in CSS pixels: more travel means gentler control
+const MOVE_DEAD = 12;       // ignore a resting thumb
+const MOVE_FULL = 0.85;     // share of the travel where you reach full speed
+const MOVE_MIN = 0.3;       // speed just past the dead zone
+const AIM_DEAD = 22;        // less than this keeps the current aim, so a plain hold fires where you face
+const AIM_SMOOTH = 12;      // how fast the aim catches up with the thumb, per second: lower is steadier
 const PLACE_PULSE = 0.12;   // seconds of trigger when a building weapon is released (spans a few input packets)
 const GHOST_MS = 800;       // mouse events this soon after a touch are the browser's emulated ones
 
@@ -28,6 +31,7 @@ export class TouchControls {
     this.useHeld = false;
     this.useKind = 0;
     this.pulse = 0;
+    this.aimAngle = null;       // smoothed fire stick direction, null while it isn't being dragged
     this.lastTouch = -1e9;
     this.active = false;
     this.setActive(window.matchMedia('(pointer: coarse)').matches);
@@ -165,10 +169,18 @@ export class TouchControls {
     g.aimMode = 'keys';
     const { move, aim } = this;
     const ml = Math.hypot(move.dx, move.dy);
-    g.touchMove = ml > MOVE_DEAD ? { x: move.dx / ml, y: move.dy / ml, gait: Math.min(1, ml / (RADIUS * 0.6)) } : null;
+    const ramp = Math.min(1, (ml - MOVE_DEAD) / (RADIUS * MOVE_FULL - MOVE_DEAD));
+    g.touchMove = ml > MOVE_DEAD ? { x: move.dx / ml, y: move.dy / ml, gait: MOVE_MIN + (1 - MOVE_MIN) * ramp } : null;
     const held = aim.id !== null;
     const place = g.ws[g.weapon].kind === 'place';
-    g.touchAim = held && Math.hypot(aim.dx, aim.dy) > AIM_DEAD ? Math.atan2(aim.dy, aim.dx) : null;
+    if (held && Math.hypot(aim.dx, aim.dy) > AIM_DEAD) {
+      // ease towards the thumb, so a shaky thumb doesn't shake the aim
+      if (this.aimAngle === null) this.aimAngle = g.keyAim;
+      const want = Math.atan2(aim.dy, aim.dx);
+      const diff = ((want - this.aimAngle + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      this.aimAngle += diff * (1 - Math.exp(-dt * AIM_SMOOTH));
+    } else this.aimAngle = null;
+    g.touchAim = this.aimAngle;
     this.pulse = Math.max(0, this.pulse - dt);
     g.fireKey = (held && !place) || this.pulse > 0;
     g.lockKey = held && place;
