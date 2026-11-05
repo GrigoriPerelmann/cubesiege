@@ -59,6 +59,10 @@ export class ClientGame {
     this.offer = null;            // three PERKS indices to pick from
     this.picks = 0;
     this.perkRects = [];          // screen rects of the perk cards (for clicks)
+    this.weaponRects = [];        // screen rects of the weapon slots (touch only): [x, y, w, h, weapon]
+    this.touch = false;           // touch controls in use: the HUD makes room for the thumbs
+    this.touchMove = null;        // move stick: { x, y, gait } with x, y a unit vector and gait 0-1
+    this.touchAim = null;         // fire stick direction in radians, null when it isn't being dragged
     this.paused = false;
     this.isHost = false;
     this.switchT = 0;             // weapon-switch popup timer
@@ -260,6 +264,8 @@ export class ClientGame {
     this.useKey = false;
     this.useMouse = false;
     this.showScores = false;
+    this.touchMove = null;
+    this.touchAim = null;
   }
 
   pickPerk(i) {
@@ -268,13 +274,23 @@ export class ClientGame {
     A.play('click', 1);
   }
 
-  // click on a HUD element (perk cards); true if the click was used
+  // click on a HUD element (perk cards, and weapon slots on touch); true if the click was used
   clickUI(x, y) {
-    if (!this.offer) return false;
-    const i = this.perkRects.findIndex(r => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]);
-    if (i < 0) return false;
-    this.pickPerk(i);
-    return true;
+    const inside = r => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3];
+    const i = this.offer ? this.perkRects.findIndex(inside) : -1;
+    if (i >= 0) { this.pickPerk(i); return true; }
+    const slot = this.weaponRects.find(inside);
+    if (slot) { this.select(slot[4]); return true; }
+    return false;
+  }
+
+  // label of the use button for what the host says it would do right now
+  useText(kind) { return USE_TEXT[kind] || 'Use'; }
+
+  // on-screen hints name the keys; rephrase them when playing by touch
+  hint(s) {
+    if (!this.touch || !s) return s;
+    return s.replace(/ \[Z\] \[X\] \[C\]( or click a card)?/, '').replace(/\s*\[\d\]/, '').replace(/\[F\]/, 'USE');
   }
 
   select(i) {
@@ -359,12 +375,13 @@ export class ClientGame {
         if (this.keys.has('s') || this.keys.has('arrowdown')) my += 1;
         if (this.keys.has('a') || this.keys.has('arrowleft')) mx -= 1;
         if (this.keys.has('d') || this.keys.has('arrowright')) mx += 1;
+        if (this.touchMove) { mx = this.touchMove.x; my = this.touchMove.y; }
       }
       const l = Math.hypot(mx, my);
       // Holding Space (or Shift) locks the aim: the keys only move you, so you can strafe and back away
       if (l > 0 && !this.fireKey && !this.lockKey) this.keyAim = Math.atan2(my, mx);
       if (l > 0) {
-        const step = this.speed * dt / l;
+        const step = this.speed * dt / l * (this.touchMove ? this.touchMove.gait : 1);
         const n = Math.max(1, Math.ceil(this.speed * dt / 8));
         let x = this.me.x, y = this.me.y;
         for (let i = 0; i < n; i++) [x, y] = this.collide(x + mx * step / n, y + my * step / n, this.pr);
@@ -374,6 +391,7 @@ export class ClientGame {
       }
     }
     // --- aim
+    if (this.touchAim !== null) this.keyAim = this.touchAim;
     let wx, wy;
     if (this.aimMode === 'keys') {
       if (this.ws[this.weapon].kind === 'place') {
@@ -805,7 +823,7 @@ export class ClientGame {
 
   announce(title, sub, dur, small = false, color = null) {
     this.announces = this.announces.filter(a => a.small !== small || small);
-    this.announces.push({ title, sub, life: dur, max: dur, small, color });
+    this.announces.push({ title, sub: this.hint(sub), life: dur, max: dur, small, color });
     if (this.announces.length > 3) this.announces.shift();
   }
 
@@ -1245,7 +1263,7 @@ export class ClientGame {
   }
 
   drawUsePrompt(ctx, x, y) {
-    const pct = this.priv.up2 || 0, label = `[F] ${USE_TEXT[this.priv.uk] || ''}`;
+    const pct = this.priv.up2 || 0, label = `${this.touch ? '' : '[F] '}${USE_TEXT[this.priv.uk] || ''}`;
     const top = y - 66;
     ctx.font = '800 10px Rubik, sans-serif';
     ctx.fillStyle = 'rgba(0,0,0,0.75)';
@@ -1290,6 +1308,7 @@ export class ClientGame {
     const r = this.r;
     const W = r.cw, H = r.ch;
     const u = clamp(Math.min(W / 1280, H / 760), 0.7, 1.25);
+    const touch = this.touch;
     ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
     const s = this.latest;
     const me = v.players.find(p => p.id === this.myId);
@@ -1366,25 +1385,27 @@ export class ClientGame {
     // --- combo (top-right)
     const mult = me ? me.mult : 1;
     const cx = W - pad - 170 * u;
-    panel(cx, pad, 170 * u, 74 * u);
-    text(`x${mult}`, cx + 14 * u, pad + 44 * u, 36 * u, mult > 1 ? '#f2b33a' : '#6b6255', 'left', 400, 'Bungee');
-    text(`${this.priv.cb || 0} chain`, cx + 156 * u, pad + 26 * u, 12 * u, '#efe6d8', 'right', 600);
-    text(`${(this.priv.ps || 0).toLocaleString()} pts`, cx + 156 * u, pad + 44 * u, 12 * u, '#9c917f', 'right', 600);
+    const topY = touch ? pad + 46 : pad;    // on touch the buttons (see #tTop) take the corner
+    const covered = touch && this.offer && me;   // the perk offer sits right below on small screens
+    panel(cx, topY, 170 * u, 74 * u);
+    text(`x${mult}`, cx + 14 * u, topY + 44 * u, 36 * u, mult > 1 ? '#f2b33a' : '#6b6255', 'left', 400, 'Bungee');
+    text(`${this.priv.cb || 0} chain`, cx + 156 * u, topY + 26 * u, 12 * u, '#efe6d8', 'right', 600);
+    text(`${(this.priv.ps || 0).toLocaleString()} pts`, cx + 156 * u, topY + 44 * u, 12 * u, '#9c917f', 'right', 600);
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(cx + 14 * u, pad + 56 * u, 142 * u, 6 * u);
+    ctx.fillRect(cx + 14 * u, topY + 56 * u, 142 * u, 6 * u);
     ctx.fillStyle = '#f2b33a';
-    ctx.fillRect(cx + 14 * u, pad + 56 * u, 142 * u * (this.priv.ct || 0) / 100, 6 * u);
-    text(`${this.ping | 0} ms`, W - pad, pad + 90 * u, 10 * u, '#6b6255', 'right', 600);
+    ctx.fillRect(cx + 14 * u, topY + 56 * u, 142 * u * (this.priv.ct || 0) / 100, 6 * u);
+    if (!covered) text(`${this.ping | 0} ms`, W - pad, topY + 90 * u, 10 * u, '#6b6255', 'right', 600);
     // owned perks
     let px = W - pad;
     this.perkDefs.forEach((pk, i) => {
       const rk = this.perks[i];
-      if (!rk) return;
+      if (!rk || covered) return;
       const sz = 24 * u;
       px -= sz + 4 * u;
-      panel(px, pad + 98 * u, sz, sz, 'rgba(14,12,10,0.8)', pk.color);
-      text(pk.icon, px + sz / 2, pad + 98 * u + 17 * u, 15 * u, pk.color, 'center', 800);
-      if (rk > 1) text(`${rk}`, px + sz - 2 * u, pad + 98 * u + sz - 2 * u, 9 * u, '#fff', 'right', 800);
+      panel(px, topY + 98 * u, sz, sz, 'rgba(14,12,10,0.8)', pk.color);
+      text(pk.icon, px + sz / 2, topY + 98 * u + 17 * u, 15 * u, pk.color, 'center', 800);
+      if (rk > 1) text(`${rk}`, px + sz - 2 * u, topY + 98 * u + sz - 2 * u, 9 * u, '#fff', 'right', 800);
     });
 
     // --- perk offer (right side)
@@ -1392,7 +1413,7 @@ export class ClientGame {
     if (this.offer && me) {
       const cw = 270 * u, ch = 64 * u;
       const x0 = W - pad - cw;
-      let y0 = Math.max(pad + 132 * u, H * 0.3);
+      let y0 = touch ? topY + 78 * u : Math.max(pad + 132 * u, H * 0.3);
       const pulse = 0.5 + Math.sin(this.time * 5) * 0.5;
       text(`CHOOSE A PERK${this.picks > 1 ? ` (${this.picks})` : ''}`, x0 + cw, y0 + 12 * u, 15 * u, `rgba(242,179,58,${0.7 + pulse * 0.3})`, 'right', 400, 'Bungee');
       y0 += 22 * u;
@@ -1402,8 +1423,8 @@ export class ClientGame {
         const rk = this.perks[k];
         const hover = this.mouse.x >= x0 && this.mouse.x <= x0 + cw && this.mouse.y >= y0 && this.mouse.y <= y0 + ch;
         panel(x0, y0, cw, ch, hover ? 'rgba(60,44,14,0.95)' : 'rgba(22,18,12,0.92)', hover ? '#f2b33a' : 'rgba(242,179,58,0.45)');
-        panel(x0 + 8 * u, y0 + ch / 2 - 13 * u, 26 * u, 26 * u, 'rgba(242,179,58,0.18)', '#f2b33a');
-        text(PERK_KEYS[i].toUpperCase(), x0 + 21 * u, y0 + ch / 2 + 6 * u, 15 * u, '#f2b33a', 'center', 400, 'Bungee');
+        if (!touch) panel(x0 + 8 * u, y0 + ch / 2 - 13 * u, 26 * u, 26 * u, 'rgba(242,179,58,0.18)', '#f2b33a');
+        if (!touch) text(PERK_KEYS[i].toUpperCase(), x0 + 21 * u, y0 + ch / 2 + 6 * u, 15 * u, '#f2b33a', 'center', 400, 'Bungee');
         text(pk.icon, x0 + 54 * u, y0 + ch / 2 + 9 * u, 26 * u, pk.color, 'center', 800);
         text(pk.name, x0 + 74 * u, y0 + 22 * u, 13 * u, '#efe6d8', 'left', 800);
         text(pk.max > 1 ? `Lv ${rk + 1}/${pk.max}` : 'ONCE', x0 + cw - 10 * u, y0 + 22 * u, 10 * u, '#9c917f', 'right', 800);
@@ -1421,10 +1442,16 @@ export class ClientGame {
     }
 
     // --- weapon bar (bottom-centre)
+    // on touch: only what you own, squeezed in between the thumbs, and the slots are buttons
     const n = this.weapons.length;
-    const sw = 64 * u, shh = 56 * u, gap = 5 * u;
-    const total = n * sw + (n - 1) * gap;
+    const slots = touch ? this.weapons.filter((w, i) => this.un >> i & 1).length : n;
+    const room = W - 2 * 110;
+    const gap = 5 * u, shh = 56 * u;
+    const sw = touch ? Math.min(64 * u, (room - (slots - 1) * gap) / slots) : 64 * u;
+    const iconU = Math.min(u, sw / 64);
+    const total = slots * sw + (slots - 1) * gap;
     let wx = W / 2 - total / 2;
+    this.weaponRects = [];
     const wy = H - pad - shh;
     // next unlock progress
     const next = this.weapons.findIndex((w, i) => !(this.un >> i & 1));
@@ -1432,7 +1459,7 @@ export class ClientGame {
       const w = this.weapons[next];
       const prev = Math.max(...this.weapons.filter((x, i) => this.un >> i & 1).map(x => x.unlock));
       const f = clamp((s.sc - prev) / (w.unlock - prev), 0, 1);
-      const bw = Math.min(total, 360 * u);
+      const bw = Math.min(touch ? room : total, 360 * u);
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(W / 2 - bw / 2, wy - 20 * u, bw, 6 * u);
       ctx.fillStyle = '#5fb0ff';
@@ -1442,6 +1469,8 @@ export class ClientGame {
     for (let i = 0; i < n; i++) {
       const w = this.weapons[i];
       const unl = this.un >> i & 1;
+      if (touch && !unl) continue;
+      if (touch) this.weaponRects.push([wx - gap / 2, wy - 14 * u, sw + gap, H - wy + 14 * u, i]);
       const sel = i === this.weapon;
       const y0 = wy - (sel ? 10 * u : 0);
       if (sel) {
@@ -1458,10 +1487,10 @@ export class ClientGame {
       ctx.strokeStyle = sel ? '#ffd36a' : unl ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)';
       ctx.lineWidth = sel ? 2.5 : 1;
       ctx.strokeRect(wx + 0.5, y0 + 0.5, sw - 1, (sel ? shh + 10 * u : shh) - 1);
-      text(KEYS[i], wx + 5 * u, y0 + 13 * u, (sel ? 12 : 10) * u, sel ? '#ffd36a' : '#9c917f', 'left', 800);
+      if (!touch) text(KEYS[i], wx + 5 * u, y0 + 13 * u, (sel ? 12 : 10) * u, sel ? '#ffd36a' : '#9c917f', 'left', 800);
       if (unl) {
         const am = this.priv.am[i];
-        drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 26 * u, u * (sel ? 1.2 : 1.05), am === 0 ? '#6b6255' : sel ? '#fff4d8' : '#d8cfbe');
+        drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 26 * u, iconU * (sel ? 1.2 : 1.05), am === 0 ? '#6b6255' : sel ? '#fff4d8' : '#d8cfbe');
         text(am < 0 ? '∞' : `${am}`, wx + sw / 2, y0 + 49 * u, (sel ? 13 : 11.5) * u, am === 0 ? '#e8423f' : sel ? '#ffffff' : '#d8cfbe', 'center', 800);
         let pip = 0;
         this.upgrades.forEach((up, k) => {
@@ -1478,14 +1507,16 @@ export class ClientGame {
     }
 
     // --- current weapon + health card (bottom-left)
-    let cardTop = H - pad;
+    let cardTop = touch ? H * 0.72 : H - pad;
+    let cardBottom = pad;
     if (me) {
       const w = this.weapons[this.weapon];
       const ws = this.ws[this.weapon];
       const mods = this.upgrades.filter((up, k) => up.w === this.weapon && this.ups >> k & 1).map(up => up.name);
       const cw = 280 * u, ch = (mods.length ? 122 : 108) * u;
-      const hx = pad, hy = H - pad - ch;
-      cardTop = hy;
+      // on touch it moves to the top centre: thumbs cover the bottom corners
+      const hx = touch ? W / 2 - cw / 2 : pad, hy = touch ? pad : H - pad - ch;
+      if (touch) cardBottom = hy + ch; else cardTop = hy;
       panel(hx, hy, cw, ch, 'rgba(14,12,10,0.8)', this.switchT > 0 ? `rgba(242,179,58,${0.3 + this.switchT * 0.5})` : 'rgba(255,255,255,0.1)');
       // big icon
       const am = this.priv.am[this.weapon];
@@ -1540,8 +1571,8 @@ export class ClientGame {
     const mm = r.minimap;
     const ms = Math.min(170 * u / mm.width, 130 * u / mm.height);
     const mw = mm.width * ms, mh = mm.height * ms;
-    const mx0 = W - pad - mw, my0 = H - pad - mh;
-    if (W > 900) {
+    const mx0 = W - pad - mw, my0 = touch ? topY + 128 * u : H - pad - mh;
+    if (touch ? H >= 560 && W >= 700 && !this.offer : W > 900) {
       ctx.globalAlpha = 0.85;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(mx0 - 4, my0 - 4, mw + 8, mh + 8);
@@ -1622,7 +1653,7 @@ export class ClientGame {
 
     // --- announcements
     // kept in the top third, clear of the player and the prompts over their head
-    let ay = H * 0.15;
+    let ay = touch ? Math.max(H * 0.15, cardBottom + 34 * u) : H * 0.15;
     for (const a of this.announces) {
       const f = a.life / a.max;
       const alpha = Math.min(1, (1 - f) * 8, f * 4);
@@ -1641,7 +1672,7 @@ export class ClientGame {
       ctx.globalAlpha = pulse;
       text('YOU ARE WALLED IN', W / 2, H * 0.72, 18 * u, '#ffb040', 'center', 400, 'Bungee');
       ctx.globalAlpha = 1;
-      text('The undead break through faster the longer you sit here. Hold [F] next to a wall to take it down.', W / 2, H * 0.72 + 20 * u, 13 * u, '#efe6d8', 'center', 600);
+      text(this.hint('The undead break through faster the longer you sit here. Hold [F] next to a wall to take it down.'), W / 2, H * 0.72 + 20 * u, 13 * u, '#efe6d8', 'center', 600);
     }
 
     // --- state overlays
@@ -1683,7 +1714,7 @@ export class ClientGame {
       ctx.fillRect(0, 0, W, H);
       text('PAUSED', W / 2, H * 0.42, 64 * u, '#f2b33a', 'center', 400, 'Bungee');
       text('The host paused the game. Waiting for them to resume...', W / 2, H * 0.42 + 40 * u, 18 * u, '#efe6d8', 'center', 600);
-      text('Chat (Enter) and perk picks still work', W / 2, H * 0.42 + 66 * u, 13 * u, '#9c917f', 'center', 600);
+      text(touch ? 'Chat and perk picks still work' : 'Chat (Enter) and perk picks still work', W / 2, H * 0.42 + 66 * u, 13 * u, '#9c917f', 'center', 600);
     }
 
     // --- crosshair

@@ -32,6 +32,28 @@ Notes:
 * Peer-to-peer works on almost all home networks. Very strict firewalls (some corporate or
   university networks) can block it, and the join will then time out with a message.
 
+## Playing on a phone or tablet
+
+Open the same link or file in the browser and touch controls switch on by themselves. Phones play in landscape; tablets
+work either way. Hosting and joining both work, and phones and computers can share a room.
+
+| Action | Touch |
+|---|---|
+| Move | Left thumb anywhere on the left half of the screen |
+| Shoot | Right thumb anywhere on the right half: hold to fire where you face (aim-assist applies), drag to aim |
+| Build | With a building weapon, drag to aim and let go to place |
+| Use: hack, drop fuel, take a structure apart | Hold the button that appears in the bottom-right corner |
+| Select weapon / pick a perk | Tap it |
+| Chat, scoreboard, menu | Buttons in the top-right corner (also **Full** for fullscreen, where the device allows it) |
+
+Good to know:
+* A phone suspends a browser tab that is in the background or has its screen off, which stops the game for everyone if
+  it is the host's. With friends, let someone on a computer host if you can.
+* The iPhone has no fullscreen for web pages. Use Share -> **Add to Home Screen** on a hosted copy to lose the browser bars.
+* On iPhone the ringer switch silences the game's sound too.
+* Plugging in a keyboard or mouse switches back to the normal controls the moment you use them, and a touch switches
+  to touch controls again.
+
 ## Controls
 
 Play with the **keyboard only**, or keyboard + mouse. The game switches automatically:
@@ -305,6 +327,7 @@ public/js/main.js   UI flow, PeerJS hosting/joining, frame loop
 public/js/host.js   the room "server" running in the host's browser (lobby, 30 Hz game loop)
 public/js/sim.js    authoritative simulation: maps, enemies, AI, weapons, waves, score
 public/js/game.js   client game: interpolation, movement prediction, input, effects, HUD
+public/js/touch.js  touch controls: twin sticks and buttons, fed into the same inputs as the keyboard
 public/js/render.js canvas renderer: pseudo-3D blocks, characters, lighting
 public/js/audio.js  procedural WebAudio sound effects
 public/balance.html, public/js/lab.js   the balance lab page

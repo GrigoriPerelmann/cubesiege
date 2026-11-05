@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0e0d0c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Cube Siege">
 <title>Cube Siege</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;600;800&display=swap" rel="stylesheet">
@@ -176,6 +181,44 @@ button:disabled { opacity: .45; cursor: default; }
 .keys { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12.5px; color: var(--muted); }
 .keys td { padding: 3px 0; vertical-align: top; }
 .keys td:first-child { color: var(--text); font-weight: 600; padding-right: 14px; white-space: nowrap; }
+
+/* ------------------------------------------------------------- touch -- */
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+canvas#game, #touchUI { touch-action: none; }
+.touchOnly { display: none; }
+body.touch table.touchOnly { display: table; }
+body.touch p.touchOnly { display: block; }
+body.touch .keysOnly { display: none; }
+/* iOS zooms the whole page into any input with text smaller than this */
+body.touch input { font-size: 16px; }
+body.touch { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+body.touch input { -webkit-user-select: text; user-select: text; }
+body.touch #chatIn { left: 50%; top: 8px; bottom: auto; transform: translateX(-50%); }
+#over .panel { overflow-x: auto; }
+
+#touchUI { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+body.touch.playing #touchUI { display: block; }
+.stick { position: absolute; width: 104px; height: 104px; margin: -52px 0 0 -52px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.28); background: rgba(255,255,255,0.05); opacity: 0.45; }
+.stick.on { opacity: 1; }
+.stick i { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%;
+  background: rgba(255,255,255,0.35); }
+#stickL { left: 96px; top: calc(100% - 96px); }
+#stickR { left: calc(100% - 160px); top: calc(100% - 104px); }
+#stickR { border-color: rgba(232,66,63,0.6); }
+#stickR i { background: rgba(232,66,63,0.55); }
+#tUse { display: none; position: absolute; right: 12px; bottom: 12px; width: 76px; min-height: 64px; padding: 4px; font-size: 12px;
+  line-height: 1.1; background: rgba(242,179,58,0.9); color: #2a1a00; border-color: #8a5a14; pointer-events: auto; touch-action: none; }
+#tUse.show { display: block; }
+#tTop { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
+#tTop button { width: 40px; height: 38px; padding: 0; font-size: 10px; letter-spacing: 0; border-bottom-width: 2px;
+  background: rgba(20,17,14,0.75); pointer-events: auto; }
+#rotateHint { display: none; position: fixed; inset: 0; z-index: 4; align-items: center; justify-content: center; padding: 30px;
+  background: rgba(6,5,4,0.92); text-align: center; color: var(--muted); line-height: 1.5; }
+#rotateHint b { font-family: 'Bungee', sans-serif; font-weight: 400; font-size: 20px; color: var(--accent); }
+@media (orientation: portrait) and (max-width: 600px) { body.touch.playing #rotateHint { display: flex; } }
+/* small screens: joining is the common case, so don't bury it under the map list */
+@media (max-width: 720px) { #menu .col:last-child { order: -1; } .chatlog { height: 110px; } }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 </head>
@@ -183,6 +226,20 @@ button:disabled { opacity: .45; cursor: default; }
 <canvas id="game"></canvas>
 <div id="vignette"></div>
 <div id="hurt"></div>
+
+<!-- touch controls: the sticks only show where the thumbs are, touches land on the canvas (see touch.js) -->
+<div id="touchUI">
+  <div id="stickL" class="stick"><i></i></div>
+  <div id="stickR" class="stick"><i></i></div>
+  <button id="tUse">Use</button>
+  <div id="tTop">
+    <button id="tFull">Full</button>
+    <button id="tChat">Chat</button>
+    <button id="tScores">Team</button>
+    <button id="tMenu">Menu</button>
+  </div>
+</div>
+<div id="rotateHint"><div><b>Turn your phone sideways</b><br>Cube Siege plays in landscape. If nothing happens, switch off rotation lock.</div></div>
 
 <!-- main menu -->
 <section id="menu" class="screen">
@@ -201,7 +258,7 @@ button:disabled { opacity: .45; cursor: default; }
       <div class="col">
         <h3>Join a game</h3>
         <div class="row join">
-          <input id="code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+          <input id="code" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
           <button id="joinBtn">Join</button>
         </div>
         <p class="muted small-text">Ask the host for the 4-letter room code or their invite link.
@@ -210,7 +267,10 @@ button:disabled { opacity: .45; cursor: default; }
           until the round is over.</p>
       </div>
     </div>
-    <p class="help"><b>Keyboard:</b> WASD / arrows move &middot; hold Space to shoot: your aim locks so you can strafe &middot; Shift locks aim without shooting<br>
+    <p class="help touchOnly"><b>Touch:</b> left thumb moves &middot; right thumb shoots: hold to fire, drag to aim &middot;
+      tap a weapon to switch &middot; tap a card to pick a perk &middot; a USE button appears when there's something to use<br>
+      Best in landscape.</p>
+    <p class="help keysOnly"><b>Keyboard:</b> WASD / arrows move &middot; hold Space to shoot: your aim locks so you can strafe &middot; Shift locks aim without shooting<br>
       <b>Mouse:</b> aim with the mouse &middot; click to shoot<br>
       F or right-click use / take apart &middot; 1-0 / Q E / wheel switch weapon &middot; Z X C pick perks &middot; Enter chat &middot; Tab scores &middot; M mute &middot; Esc menu</p>
     <div id="status" class="status"></div>
@@ -301,7 +361,14 @@ button:disabled { opacity: .45; cursor: default; }
       <button id="pmMute">Sound: on</button>
       <button id="pmLeave" class="ghost">Leave game</button>
     </div>
-    <table class="keys">
+    <table class="keys touchOnly">
+      <tr><td>Move</td><td>Left thumb, anywhere on the left half</td></tr>
+      <tr><td>Shoot</td><td>Right thumb: hold to fire where you face, drag to aim</td></tr>
+      <tr><td>Build</td><td>Drag to aim, let go to place</td></tr>
+      <tr><td>Use / take apart</td><td>Hold the button that appears</td></tr>
+      <tr><td>Weapons / perks</td><td>Tap them</td></tr>
+    </table>
+    <table class="keys keysOnly">
       <tr><td>Move</td><td>WASD / arrows</td></tr>
       <tr><td>Shoot</td><td>Hold Space (aim stays locked, so you can strafe) or left mouse</td></tr>
       <tr><td>Lock aim</td><td>Hold Shift</td></tr>
@@ -313,7 +380,7 @@ button:disabled { opacity: .45; cursor: default; }
   </div>
 </section>
 
-<input id="chatIn" class="hidden" maxlength="140" placeholder="Chat (Enter to send, Esc to cancel)" autocomplete="off">
+<input id="chatIn" class="hidden" maxlength="140" placeholder="Chat (Enter to send, Esc to cancel)" autocomplete="off" enterkeyhint="send">
 <div id="toast" class="toast hidden"></div>
 
 <script>
@@ -326,6 +393,7 @@ __mods['render'] = (() => {
 const T = 32;
 const HMAX = 60; // extra space above each wall row for tall objects
 const LIGHT_DIV = 3; // lighting buffer resolution divider
+const MAX_TOUCH_PIXELS = 2.6e6;
 
 // ------------------------------------------------------------ utilities --
 function hash(x, y) {
@@ -404,20 +472,29 @@ class Renderer {
   }
 
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.dpr = dpr;
+    const touch = window.matchMedia('(pointer: coarse)').matches;
     this.cw = window.innerWidth;
     this.ch = window.innerHeight;
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // big tablet screens: trade a little sharpness for a steady frame rate
+    if (touch) dpr = Math.min(dpr, Math.sqrt(MAX_TOUCH_PIXELS / (this.cw * this.ch)));
+    this.dpr = dpr;
     this.canvas.width = Math.floor(this.cw * dpr);
     this.canvas.height = Math.floor(this.ch * dpr);
-    // show roughly 980 x 610 world pixels whatever the window size
-    this.scale = Math.max(this.cw / 980, this.ch / 610);
+    // mobile browser bars come and go: CSS viewport units don't match innerHeight there
+    this.canvas.style.width = `${this.cw}px`;
+    this.canvas.style.height = `${this.ch}px`;
+    // show roughly 980 x 610 world pixels whatever the window size (the same area turned on its side
+    // for a tablet held upright)
+    this.scale = touch && this.ch > this.cw ? Math.max(this.cw / 610, this.ch / 980) : Math.max(this.cw / 980, this.ch / 610);
     this.light.width = Math.ceil(this.cw / LIGHT_DIV);
     this.light.height = Math.ceil(this.ch / LIGHT_DIV);
   }
 
   // ------------------------------------------------------------ map --
   setMap(map) {
+    // iOS is slow to free canvas memory and fails hard at its limit, so give the old map's back right away
+    for (const c of [this.floor, ...(this.rowCanvases || [])]) if (c) c.width = c.height = 0;
     this.map = map;
     this.theme = map.theme;
     const W = map.w * T, H = map.h * T;
@@ -1450,7 +1527,8 @@ let muted = false;
 const last = {};
 
 function initAudio() {
-  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+  // iOS also has an 'interrupted' state, after a call or when coming back to the tab
+  if (ctx) { if (ctx.state !== 'running') ctx.resume(); return; }
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
   } catch (e) { return; }
@@ -1631,6 +1709,10 @@ class ClientGame {
     this.offer = null;            // three PERKS indices to pick from
     this.picks = 0;
     this.perkRects = [];          // screen rects of the perk cards (for clicks)
+    this.weaponRects = [];        // screen rects of the weapon slots (touch only): [x, y, w, h, weapon]
+    this.touch = false;           // touch controls in use: the HUD makes room for the thumbs
+    this.touchMove = null;        // move stick: { x, y, gait } with x, y a unit vector and gait 0-1
+    this.touchAim = null;         // fire stick direction in radians, null when it isn't being dragged
     this.paused = false;
     this.isHost = false;
     this.switchT = 0;             // weapon-switch popup timer
@@ -1832,6 +1914,8 @@ class ClientGame {
     this.useKey = false;
     this.useMouse = false;
     this.showScores = false;
+    this.touchMove = null;
+    this.touchAim = null;
   }
 
   pickPerk(i) {
@@ -1840,13 +1924,23 @@ class ClientGame {
     A.play('click', 1);
   }
 
-  // click on a HUD element (perk cards); true if the click was used
+  // click on a HUD element (perk cards, and weapon slots on touch); true if the click was used
   clickUI(x, y) {
-    if (!this.offer) return false;
-    const i = this.perkRects.findIndex(r => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3]);
-    if (i < 0) return false;
-    this.pickPerk(i);
-    return true;
+    const inside = r => x >= r[0] && x <= r[0] + r[2] && y >= r[1] && y <= r[1] + r[3];
+    const i = this.offer ? this.perkRects.findIndex(inside) : -1;
+    if (i >= 0) { this.pickPerk(i); return true; }
+    const slot = this.weaponRects.find(inside);
+    if (slot) { this.select(slot[4]); return true; }
+    return false;
+  }
+
+  // label of the use button for what the host says it would do right now
+  useText(kind) { return USE_TEXT[kind] || 'Use'; }
+
+  // on-screen hints name the keys; rephrase them when playing by touch
+  hint(s) {
+    if (!this.touch || !s) return s;
+    return s.replace(/ \[Z\] \[X\] \[C\]( or click a card)?/, '').replace(/\s*\[\d\]/, '').replace(/\[F\]/, 'USE');
   }
 
   select(i) {
@@ -1931,12 +2025,13 @@ class ClientGame {
         if (this.keys.has('s') || this.keys.has('arrowdown')) my += 1;
         if (this.keys.has('a') || this.keys.has('arrowleft')) mx -= 1;
         if (this.keys.has('d') || this.keys.has('arrowright')) mx += 1;
+        if (this.touchMove) { mx = this.touchMove.x; my = this.touchMove.y; }
       }
       const l = Math.hypot(mx, my);
       // Holding Space (or Shift) locks the aim: the keys only move you, so you can strafe and back away
       if (l > 0 && !this.fireKey && !this.lockKey) this.keyAim = Math.atan2(my, mx);
       if (l > 0) {
-        const step = this.speed * dt / l;
+        const step = this.speed * dt / l * (this.touchMove ? this.touchMove.gait : 1);
         const n = Math.max(1, Math.ceil(this.speed * dt / 8));
         let x = this.me.x, y = this.me.y;
         for (let i = 0; i < n; i++) [x, y] = this.collide(x + mx * step / n, y + my * step / n, this.pr);
@@ -1946,6 +2041,7 @@ class ClientGame {
       }
     }
     // --- aim
+    if (this.touchAim !== null) this.keyAim = this.touchAim;
     let wx, wy;
     if (this.aimMode === 'keys') {
       if (this.ws[this.weapon].kind === 'place') {
@@ -2377,7 +2473,7 @@ class ClientGame {
 
   announce(title, sub, dur, small = false, color = null) {
     this.announces = this.announces.filter(a => a.small !== small || small);
-    this.announces.push({ title, sub, life: dur, max: dur, small, color });
+    this.announces.push({ title, sub: this.hint(sub), life: dur, max: dur, small, color });
     if (this.announces.length > 3) this.announces.shift();
   }
 
@@ -2817,7 +2913,7 @@ class ClientGame {
   }
 
   drawUsePrompt(ctx, x, y) {
-    const pct = this.priv.up2 || 0, label = `[F] ${USE_TEXT[this.priv.uk] || ''}`;
+    const pct = this.priv.up2 || 0, label = `${this.touch ? '' : '[F] '}${USE_TEXT[this.priv.uk] || ''}`;
     const top = y - 66;
     ctx.font = '800 10px Rubik, sans-serif';
     ctx.fillStyle = 'rgba(0,0,0,0.75)';
@@ -2862,6 +2958,7 @@ class ClientGame {
     const r = this.r;
     const W = r.cw, H = r.ch;
     const u = clamp(Math.min(W / 1280, H / 760), 0.7, 1.25);
+    const touch = this.touch;
     ctx.setTransform(r.dpr, 0, 0, r.dpr, 0, 0);
     const s = this.latest;
     const me = v.players.find(p => p.id === this.myId);
@@ -2938,25 +3035,27 @@ class ClientGame {
     // --- combo (top-right)
     const mult = me ? me.mult : 1;
     const cx = W - pad - 170 * u;
-    panel(cx, pad, 170 * u, 74 * u);
-    text(`x${mult}`, cx + 14 * u, pad + 44 * u, 36 * u, mult > 1 ? '#f2b33a' : '#6b6255', 'left', 400, 'Bungee');
-    text(`${this.priv.cb || 0} chain`, cx + 156 * u, pad + 26 * u, 12 * u, '#efe6d8', 'right', 600);
-    text(`${(this.priv.ps || 0).toLocaleString()} pts`, cx + 156 * u, pad + 44 * u, 12 * u, '#9c917f', 'right', 600);
+    const topY = touch ? pad + 46 : pad;    // on touch the buttons (see #tTop) take the corner
+    const covered = touch && this.offer && me;   // the perk offer sits right below on small screens
+    panel(cx, topY, 170 * u, 74 * u);
+    text(`x${mult}`, cx + 14 * u, topY + 44 * u, 36 * u, mult > 1 ? '#f2b33a' : '#6b6255', 'left', 400, 'Bungee');
+    text(`${this.priv.cb || 0} chain`, cx + 156 * u, topY + 26 * u, 12 * u, '#efe6d8', 'right', 600);
+    text(`${(this.priv.ps || 0).toLocaleString()} pts`, cx + 156 * u, topY + 44 * u, 12 * u, '#9c917f', 'right', 600);
     ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(cx + 14 * u, pad + 56 * u, 142 * u, 6 * u);
+    ctx.fillRect(cx + 14 * u, topY + 56 * u, 142 * u, 6 * u);
     ctx.fillStyle = '#f2b33a';
-    ctx.fillRect(cx + 14 * u, pad + 56 * u, 142 * u * (this.priv.ct || 0) / 100, 6 * u);
-    text(`${this.ping | 0} ms`, W - pad, pad + 90 * u, 10 * u, '#6b6255', 'right', 600);
+    ctx.fillRect(cx + 14 * u, topY + 56 * u, 142 * u * (this.priv.ct || 0) / 100, 6 * u);
+    if (!covered) text(`${this.ping | 0} ms`, W - pad, topY + 90 * u, 10 * u, '#6b6255', 'right', 600);
     // owned perks
     let px = W - pad;
     this.perkDefs.forEach((pk, i) => {
       const rk = this.perks[i];
-      if (!rk) return;
+      if (!rk || covered) return;
       const sz = 24 * u;
       px -= sz + 4 * u;
-      panel(px, pad + 98 * u, sz, sz, 'rgba(14,12,10,0.8)', pk.color);
-      text(pk.icon, px + sz / 2, pad + 98 * u + 17 * u, 15 * u, pk.color, 'center', 800);
-      if (rk > 1) text(`${rk}`, px + sz - 2 * u, pad + 98 * u + sz - 2 * u, 9 * u, '#fff', 'right', 800);
+      panel(px, topY + 98 * u, sz, sz, 'rgba(14,12,10,0.8)', pk.color);
+      text(pk.icon, px + sz / 2, topY + 98 * u + 17 * u, 15 * u, pk.color, 'center', 800);
+      if (rk > 1) text(`${rk}`, px + sz - 2 * u, topY + 98 * u + sz - 2 * u, 9 * u, '#fff', 'right', 800);
     });
 
     // --- perk offer (right side)
@@ -2964,7 +3063,7 @@ class ClientGame {
     if (this.offer && me) {
       const cw = 270 * u, ch = 64 * u;
       const x0 = W - pad - cw;
-      let y0 = Math.max(pad + 132 * u, H * 0.3);
+      let y0 = touch ? topY + 78 * u : Math.max(pad + 132 * u, H * 0.3);
       const pulse = 0.5 + Math.sin(this.time * 5) * 0.5;
       text(`CHOOSE A PERK${this.picks > 1 ? ` (${this.picks})` : ''}`, x0 + cw, y0 + 12 * u, 15 * u, `rgba(242,179,58,${0.7 + pulse * 0.3})`, 'right', 400, 'Bungee');
       y0 += 22 * u;
@@ -2974,8 +3073,8 @@ class ClientGame {
         const rk = this.perks[k];
         const hover = this.mouse.x >= x0 && this.mouse.x <= x0 + cw && this.mouse.y >= y0 && this.mouse.y <= y0 + ch;
         panel(x0, y0, cw, ch, hover ? 'rgba(60,44,14,0.95)' : 'rgba(22,18,12,0.92)', hover ? '#f2b33a' : 'rgba(242,179,58,0.45)');
-        panel(x0 + 8 * u, y0 + ch / 2 - 13 * u, 26 * u, 26 * u, 'rgba(242,179,58,0.18)', '#f2b33a');
-        text(PERK_KEYS[i].toUpperCase(), x0 + 21 * u, y0 + ch / 2 + 6 * u, 15 * u, '#f2b33a', 'center', 400, 'Bungee');
+        if (!touch) panel(x0 + 8 * u, y0 + ch / 2 - 13 * u, 26 * u, 26 * u, 'rgba(242,179,58,0.18)', '#f2b33a');
+        if (!touch) text(PERK_KEYS[i].toUpperCase(), x0 + 21 * u, y0 + ch / 2 + 6 * u, 15 * u, '#f2b33a', 'center', 400, 'Bungee');
         text(pk.icon, x0 + 54 * u, y0 + ch / 2 + 9 * u, 26 * u, pk.color, 'center', 800);
         text(pk.name, x0 + 74 * u, y0 + 22 * u, 13 * u, '#efe6d8', 'left', 800);
         text(pk.max > 1 ? `Lv ${rk + 1}/${pk.max}` : 'ONCE', x0 + cw - 10 * u, y0 + 22 * u, 10 * u, '#9c917f', 'right', 800);
@@ -2993,10 +3092,16 @@ class ClientGame {
     }
 
     // --- weapon bar (bottom-centre)
+    // on touch: only what you own, squeezed in between the thumbs, and the slots are buttons
     const n = this.weapons.length;
-    const sw = 64 * u, shh = 56 * u, gap = 5 * u;
-    const total = n * sw + (n - 1) * gap;
+    const slots = touch ? this.weapons.filter((w, i) => this.un >> i & 1).length : n;
+    const room = W - 2 * 110;
+    const gap = 5 * u, shh = 56 * u;
+    const sw = touch ? Math.min(64 * u, (room - (slots - 1) * gap) / slots) : 64 * u;
+    const iconU = Math.min(u, sw / 64);
+    const total = slots * sw + (slots - 1) * gap;
     let wx = W / 2 - total / 2;
+    this.weaponRects = [];
     const wy = H - pad - shh;
     // next unlock progress
     const next = this.weapons.findIndex((w, i) => !(this.un >> i & 1));
@@ -3004,7 +3109,7 @@ class ClientGame {
       const w = this.weapons[next];
       const prev = Math.max(...this.weapons.filter((x, i) => this.un >> i & 1).map(x => x.unlock));
       const f = clamp((s.sc - prev) / (w.unlock - prev), 0, 1);
-      const bw = Math.min(total, 360 * u);
+      const bw = Math.min(touch ? room : total, 360 * u);
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(W / 2 - bw / 2, wy - 20 * u, bw, 6 * u);
       ctx.fillStyle = '#5fb0ff';
@@ -3014,6 +3119,8 @@ class ClientGame {
     for (let i = 0; i < n; i++) {
       const w = this.weapons[i];
       const unl = this.un >> i & 1;
+      if (touch && !unl) continue;
+      if (touch) this.weaponRects.push([wx - gap / 2, wy - 14 * u, sw + gap, H - wy + 14 * u, i]);
       const sel = i === this.weapon;
       const y0 = wy - (sel ? 10 * u : 0);
       if (sel) {
@@ -3030,10 +3137,10 @@ class ClientGame {
       ctx.strokeStyle = sel ? '#ffd36a' : unl ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.06)';
       ctx.lineWidth = sel ? 2.5 : 1;
       ctx.strokeRect(wx + 0.5, y0 + 0.5, sw - 1, (sel ? shh + 10 * u : shh) - 1);
-      text(KEYS[i], wx + 5 * u, y0 + 13 * u, (sel ? 12 : 10) * u, sel ? '#ffd36a' : '#9c917f', 'left', 800);
+      if (!touch) text(KEYS[i], wx + 5 * u, y0 + 13 * u, (sel ? 12 : 10) * u, sel ? '#ffd36a' : '#9c917f', 'left', 800);
       if (unl) {
         const am = this.priv.am[i];
-        drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 26 * u, u * (sel ? 1.2 : 1.05), am === 0 ? '#6b6255' : sel ? '#fff4d8' : '#d8cfbe');
+        drawWeaponIcon(ctx, w.id, wx + sw / 2, y0 + 26 * u, iconU * (sel ? 1.2 : 1.05), am === 0 ? '#6b6255' : sel ? '#fff4d8' : '#d8cfbe');
         text(am < 0 ? '∞' : `${am}`, wx + sw / 2, y0 + 49 * u, (sel ? 13 : 11.5) * u, am === 0 ? '#e8423f' : sel ? '#ffffff' : '#d8cfbe', 'center', 800);
         let pip = 0;
         this.upgrades.forEach((up, k) => {
@@ -3050,14 +3157,16 @@ class ClientGame {
     }
 
     // --- current weapon + health card (bottom-left)
-    let cardTop = H - pad;
+    let cardTop = touch ? H * 0.72 : H - pad;
+    let cardBottom = pad;
     if (me) {
       const w = this.weapons[this.weapon];
       const ws = this.ws[this.weapon];
       const mods = this.upgrades.filter((up, k) => up.w === this.weapon && this.ups >> k & 1).map(up => up.name);
       const cw = 280 * u, ch = (mods.length ? 122 : 108) * u;
-      const hx = pad, hy = H - pad - ch;
-      cardTop = hy;
+      // on touch it moves to the top centre: thumbs cover the bottom corners
+      const hx = touch ? W / 2 - cw / 2 : pad, hy = touch ? pad : H - pad - ch;
+      if (touch) cardBottom = hy + ch; else cardTop = hy;
       panel(hx, hy, cw, ch, 'rgba(14,12,10,0.8)', this.switchT > 0 ? `rgba(242,179,58,${0.3 + this.switchT * 0.5})` : 'rgba(255,255,255,0.1)');
       // big icon
       const am = this.priv.am[this.weapon];
@@ -3112,8 +3221,8 @@ class ClientGame {
     const mm = r.minimap;
     const ms = Math.min(170 * u / mm.width, 130 * u / mm.height);
     const mw = mm.width * ms, mh = mm.height * ms;
-    const mx0 = W - pad - mw, my0 = H - pad - mh;
-    if (W > 900) {
+    const mx0 = W - pad - mw, my0 = touch ? topY + 128 * u : H - pad - mh;
+    if (touch ? H >= 560 && W >= 700 && !this.offer : W > 900) {
       ctx.globalAlpha = 0.85;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(mx0 - 4, my0 - 4, mw + 8, mh + 8);
@@ -3194,7 +3303,7 @@ class ClientGame {
 
     // --- announcements
     // kept in the top third, clear of the player and the prompts over their head
-    let ay = H * 0.15;
+    let ay = touch ? Math.max(H * 0.15, cardBottom + 34 * u) : H * 0.15;
     for (const a of this.announces) {
       const f = a.life / a.max;
       const alpha = Math.min(1, (1 - f) * 8, f * 4);
@@ -3213,7 +3322,7 @@ class ClientGame {
       ctx.globalAlpha = pulse;
       text('YOU ARE WALLED IN', W / 2, H * 0.72, 18 * u, '#ffb040', 'center', 400, 'Bungee');
       ctx.globalAlpha = 1;
-      text('The undead break through faster the longer you sit here. Hold [F] next to a wall to take it down.', W / 2, H * 0.72 + 20 * u, 13 * u, '#efe6d8', 'center', 600);
+      text(this.hint('The undead break through faster the longer you sit here. Hold [F] next to a wall to take it down.'), W / 2, H * 0.72 + 20 * u, 13 * u, '#efe6d8', 'center', 600);
     }
 
     // --- state overlays
@@ -3255,7 +3364,7 @@ class ClientGame {
       ctx.fillRect(0, 0, W, H);
       text('PAUSED', W / 2, H * 0.42, 64 * u, '#f2b33a', 'center', 400, 'Bungee');
       text('The host paused the game. Waiting for them to resume...', W / 2, H * 0.42 + 40 * u, 18 * u, '#efe6d8', 'center', 600);
-      text('Chat (Enter) and perk picks still work', W / 2, H * 0.42 + 66 * u, 13 * u, '#9c917f', 'center', 600);
+      text(touch ? 'Chat and perk picks still work' : 'Chat (Enter) and perk picks still work', W / 2, H * 0.42 + 66 * u, 13 * u, '#9c917f', 'center', 600);
     }
 
     // --- crosshair
@@ -5894,6 +6003,195 @@ class Host {
 
 return { MAX_PLAYERS, Host };
 })();
+// ---- touch.js
+__mods['touch'] = (() => {
+// Touch controls for phones and tablets: twin sticks drawn over the game, plus a few buttons.
+//   left half of the screen   floating move stick
+//   right half of the screen  floating fire stick: hold to shoot, drag to aim (aim-assist still applies).
+//                             Building weapons aim while you drag and place when you let go.
+// The controls only feed the same inputs the keyboard uses (see sync), so the game code stays input-agnostic.
+// Touching the game turns them on; using a real keyboard or mouse (a tablet with a keyboard) turns them off.
+const A = __mods['audio'];
+const RADIUS = 52;          // how far a stick travels, in CSS pixels
+const MOVE_DEAD = 8;        // ignore a resting thumb
+const AIM_DEAD = 16;        // less than this keeps the current aim, so a plain hold fires where you face
+const PLACE_PULSE = 0.12;   // seconds of trigger when a building weapon is released (spans a few input packets)
+const GHOST_MS = 800;       // mouse events this soon after a touch are the browser's emulated ones
+
+const $ = id => document.getElementById(id);
+
+function makeStick(id) {
+  const el = $(id);
+  return { el, knob: el.firstElementChild, id: null, x0: 0, y0: 0, dx: 0, dy: 0 };
+}
+
+class TouchControls {
+  // hooks: { game(), openChat(), closeChat(), openMenu() }
+  constructor(canvas, hooks) {
+    this.hooks = hooks;
+    this.move = makeStick('stickL');
+    this.aim = makeStick('stickR');
+    this.useHeld = false;
+    this.useKind = 0;
+    this.pulse = 0;
+    this.lastTouch = -1e9;
+    this.active = false;
+    this.setActive(window.matchMedia('(pointer: coarse)').matches);
+
+    canvas.addEventListener('touchstart', e => this.onStart(e), { passive: false });
+    canvas.addEventListener('touchmove', e => this.onMove(e), { passive: false });
+    canvas.addEventListener('touchend', e => this.onEnd(e, true), { passive: false });
+    canvas.addEventListener('touchcancel', e => this.onEnd(e, false), { passive: false });
+
+    this.useBtn = $('tUse');
+    const hold = v => e => { e.preventDefault(); this.lastTouch = performance.now(); this.useHeld = v; };
+    this.useBtn.addEventListener('touchstart', hold(true), { passive: false });
+    this.useBtn.addEventListener('touchend', hold(false), { passive: false });
+    this.useBtn.addEventListener('touchcancel', hold(false), { passive: false });
+
+    const tap = (id, fn) => { $(id).onclick = () => { A.initAudio(); A.play('click'); fn(); }; };
+    tap('tMenu', () => hooks.openMenu());
+    tap('tChat', () => hooks.openChat());
+    tap('tScores', () => { const g = hooks.game(); if (g) g.showScores = !g.showScores; });
+
+    // iPhones have no fullscreen API, so the button only exists where it can work
+    const root = document.documentElement;
+    const enter = root.requestFullscreen || root.webkitRequestFullscreen;
+    if (enter) {
+      tap('tFull', () => {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        const on = document.fullscreenElement || document.webkitFullscreenElement;
+        Promise.resolve(on ? exit.call(document) : enter.call(root)).catch(() => {});
+      });
+    } else $('tFull').classList.add('hidden');
+  }
+
+  setActive(on) {
+    if (on === this.active) return;
+    this.active = on;
+    document.body.classList.toggle('touch', on);
+    if (on) return;
+    this.reset();
+    const g = this.hooks.game();
+    if (g) { g.touch = false; g.clearInput(); }
+  }
+
+  // false for the mouse events a browser emulates after a touch; a real mouse switches the touch UI off
+  realMouse() {
+    if (performance.now() - this.lastTouch < GHOST_MS) return false;
+    this.setActive(false);
+    return true;
+  }
+
+  reset() {
+    this.release(this.move);
+    this.release(this.aim);
+    this.useHeld = false;
+    this.pulse = 0;
+  }
+
+  grab(s, t) {
+    s.id = t.identifier;
+    s.x0 = Math.max(RADIUS + 6, Math.min(window.innerWidth - RADIUS - 6, t.clientX));
+    s.y0 = Math.max(RADIUS + 6, Math.min(window.innerHeight - RADIUS - 6, t.clientY));
+    s.el.classList.add('on');
+    s.el.style.left = `${s.x0}px`;
+    s.el.style.top = `${s.y0}px`;
+    this.drag(s, t);
+  }
+
+  drag(s, t) {
+    let dx = t.clientX - s.x0, dy = t.clientY - s.y0;
+    const d = Math.hypot(dx, dy);
+    if (d > RADIUS) {
+      // the base follows the thumb, so turning back answers at once
+      s.x0 += dx * (1 - RADIUS / d);
+      s.y0 += dy * (1 - RADIUS / d);
+      dx = t.clientX - s.x0;
+      dy = t.clientY - s.y0;
+      s.el.style.left = `${s.x0}px`;
+      s.el.style.top = `${s.y0}px`;
+    }
+    s.dx = dx;
+    s.dy = dy;
+    s.knob.style.transform = `translate(${dx}px, ${dy}px)`;
+  }
+
+  release(s) {
+    s.id = null;
+    s.dx = s.dy = 0;
+    s.el.classList.remove('on');
+    s.el.style.left = s.el.style.top = '';
+    s.knob.style.transform = '';
+  }
+
+  onStart(e) {
+    e.preventDefault();
+    this.lastTouch = performance.now();
+    this.setActive(true);
+    const g = this.hooks.game();
+    if (!g) return;
+    if (g.chatting) this.hooks.closeChat();
+    // a touch can vanish without an end event (system gestures, the keyboard opening)
+    const alive = [...e.touches].map(t => t.identifier);
+    for (const s of [this.move, this.aim]) if (s.id !== null && !alive.includes(s.id)) this.release(s);
+    for (const t of e.changedTouches) {
+      if (g.clickUI(t.clientX, t.clientY)) continue;
+      const s = t.clientX < window.innerWidth / 2 ? this.move : this.aim;
+      if (s.id === null) this.grab(s, t);
+    }
+  }
+
+  onMove(e) {
+    e.preventDefault();
+    this.lastTouch = performance.now();
+    for (const t of e.changedTouches) {
+      if (t.identifier === this.move.id) this.drag(this.move, t);
+      else if (t.identifier === this.aim.id) this.drag(this.aim, t);
+    }
+  }
+
+  onEnd(e, lifted) {
+    e.preventDefault();
+    this.lastTouch = performance.now();
+    for (const t of e.changedTouches) {
+      if (t.identifier === this.move.id) this.release(this.move);
+      else if (t.identifier === this.aim.id) {
+        const g = this.hooks.game();
+        if (lifted && g && g.ws[g.weapon].kind === 'place') this.pulse = PLACE_PULSE;
+        this.release(this.aim);
+      }
+    }
+  }
+
+  // once a frame: turn the stick positions into the game's inputs
+  sync(g, dt) {
+    g.touch = this.active;
+    if (!this.active) return;
+    g.aimMode = 'keys';
+    const { move, aim } = this;
+    const ml = Math.hypot(move.dx, move.dy);
+    g.touchMove = ml > MOVE_DEAD ? { x: move.dx / ml, y: move.dy / ml, gait: Math.min(1, ml / (RADIUS * 0.6)) } : null;
+    const held = aim.id !== null;
+    const place = g.ws[g.weapon].kind === 'place';
+    g.touchAim = held && Math.hypot(aim.dx, aim.dy) > AIM_DEAD ? Math.atan2(aim.dy, aim.dx) : null;
+    this.pulse = Math.max(0, this.pulse - dt);
+    g.fireKey = (held && !place) || this.pulse > 0;
+    g.lockKey = held && place;
+    // the use button only shows when there is something to use
+    const kind = g.myState === 0 ? g.priv.uk || 0 : 0;
+    if (kind !== this.useKind) {
+      this.useKind = kind;
+      this.useBtn.classList.toggle('show', kind > 0);
+      if (kind) this.useBtn.textContent = g.useText(kind);
+      else this.useHeld = false;   // a button that just vanished may never see its touchend
+    }
+    g.useKey = this.useHeld;
+  }
+}
+
+return { TouchControls };
+})();
 // ---- main.js
 __mods['main'] = (() => {
 // UI flow: menu -> lobby -> game -> results. Owns the peer-to-peer session and the frame loop.
@@ -5905,6 +6203,7 @@ const { Renderer, T, CHARS, LOOKS, GUNS } = __mods['render'];
 const { ClientGame } = __mods['game'];
 const { Host } = __mods['host'];
 const { mapList, getMap, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS, CHAPTERS, FRIENDLY_FIRE } = __mods['sim'];
+const { TouchControls } = __mods['touch'];
 const A = __mods['audio'];
 const $ = id => document.getElementById(id);
 const canvas = $('game');
@@ -6373,11 +6672,25 @@ function toast(msg) {
 function startGame(m) {
   A.initAudio();
   closeMenu(false);
+  controls.reset();
   game = new ClientGame(renderer, net, m, roster, { openChat, setHurt });
   game.isHost = !!room && room.host === myId;
   show(null);
   canvas.focus();
+  keepAwake();
 }
+
+// A phone that dims mid-round would also drop out of the game, so ask it to stay on where that's supported.
+let wakeLock = null;
+async function keepAwake() {
+  if (!game || wakeLock || document.hidden || !navigator.wakeLock) return;
+  try {
+    const lock = wakeLock = await navigator.wakeLock.request('screen');
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+    if (!game) lock.release();
+  } catch (e) { wakeLock = null; /* optional: battery saver can refuse it */ }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(); });
 
 let hurtShown = -1;
 function setHurt(v) {
@@ -6390,6 +6703,8 @@ function endGame() {
   if (game) game.clearInput();
   closeMenu(false);
   game = null;
+  controls.reset();
+  if (wakeLock) wakeLock.release();
   closeChat();
   document.body.classList.remove('playing');
 }
@@ -6453,7 +6768,9 @@ function openChat() {
   game.clearInput();
   chatIn.classList.remove('hidden');
   chatIn.value = '';
-  setTimeout(() => chatIn.focus(), 0);
+  // iOS only opens the keyboard from inside the tap itself; a typed Enter must not land in the box
+  if (controls.active) chatIn.focus();
+  else setTimeout(() => chatIn.focus(), 0);
 }
 function closeChat() {
   chatIn.classList.add('hidden');
@@ -6467,6 +6784,8 @@ chatIn.addEventListener('keydown', e => {
     closeChat();
   } else if (e.key === 'Escape') closeChat();
 });
+// on touch, dismissing the keyboard is the way to cancel
+chatIn.addEventListener('blur', () => { if (controls.active && game && game.chatting) closeChat(); });
 
 // ------------------------------------------------------------- game menu --
 // Esc opens this for everyone. The host's menu also pauses the round and adds the controls to restart or
@@ -6477,7 +6796,7 @@ function pmConfirm(btn, label, act) {
     if (btn.classList.contains('confirm')) { pmReset(); act(); return; }
     pmReset();
     btn.classList.add('confirm');
-    btn.textContent = 'Click again to confirm';
+    btn.textContent = 'Press again to confirm';
   };
 }
 function pmReset() {
@@ -6515,6 +6834,9 @@ pmConfirm($('pmEnd'), 'End round', () => { closeMenu(false); send({ t: 'end' });
 $('pmMute').onclick = () => { $('pmMute').textContent = `Sound: ${A.toggleMute() ? 'off' : 'on'}`; };
 
 // ----------------------------------------------------------------- input --
+const controls = new TouchControls(canvas, { game: () => game, openChat, closeChat, openMenu });
+// browsers only let sound start from a tap, and iOS only counts the end of one
+window.addEventListener('touchend', () => A.initAudio(), { passive: true });
 window.addEventListener('keydown', e => {
   if (!game || game.chatting) return;
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
@@ -6526,12 +6848,14 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (game.menuOpen) return;
+  controls.setActive(false);
   game.keyDown(e);
 });
 window.addEventListener('keyup', e => { if (game) game.keyUp(e); });
 window.addEventListener('blur', () => { if (game) game.clearInput(); });
 canvas.addEventListener('mousemove', e => {
   if (!game) return;
+  if (Math.abs(e.clientX - game.mouse.x) + Math.abs(e.clientY - game.mouse.y) > 3 && !controls.realMouse()) return;
   // a bumped mouse shouldn't break a held keyboard aim
   if (!game.fireKey && !game.lockKey && Math.abs(e.clientX - game.mouse.x) + Math.abs(e.clientY - game.mouse.y) > 3) game.aimMode = 'mouse';
   game.mouse.x = e.clientX;
@@ -6539,7 +6863,7 @@ canvas.addEventListener('mousemove', e => {
 });
 canvas.addEventListener('mousedown', e => {
   A.initAudio();
-  if (!game) return;
+  if (!game || !controls.realMouse()) return;
   if (game.chatting) closeChat();
   if (e.button === 0 && game.clickUI(e.clientX, e.clientY)) { e.preventDefault(); return; }
   if (e.button === 0) { game.mouse.down = true; game.aimMode = 'mouse'; }
@@ -6554,6 +6878,9 @@ window.addEventListener('mouseup', e => {
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { if (game) { game.cycle(e.deltaY > 0 ? 1 : -1); e.preventDefault(); } }, { passive: false });
 window.addEventListener('resize', () => renderer.resize());
+// some phones report the old size during the rotation itself
+window.addEventListener('orientationchange', () => setTimeout(() => renderer.resize(), 300));
+window.addEventListener('blur', () => controls.reset());
 
 setInterval(() => { if (game) send({ t: 'ping', id: performance.now() }); }, 2000);
 
@@ -6592,6 +6919,7 @@ function frame(now) {
   try {
     if (game) {
       if (renderer.map !== game.map) renderer.setMap(game.map);
+      controls.sync(game, dt);
       game.update(dt);
       game.render();
     } else {

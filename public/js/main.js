@@ -7,6 +7,7 @@ import { Renderer, T, CHARS, LOOKS, GUNS } from './render.js';
 import { ClientGame } from './game.js';
 import { Host } from './host.js';
 import { mapList, getMap, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS, CHAPTERS, FRIENDLY_FIRE } from './sim.js';
+import { TouchControls } from './touch.js';
 import * as A from './audio.js';
 
 const $ = id => document.getElementById(id);
@@ -476,11 +477,25 @@ function toast(msg) {
 function startGame(m) {
   A.initAudio();
   closeMenu(false);
+  controls.reset();
   game = new ClientGame(renderer, net, m, roster, { openChat, setHurt });
   game.isHost = !!room && room.host === myId;
   show(null);
   canvas.focus();
+  keepAwake();
 }
+
+// A phone that dims mid-round would also drop out of the game, so ask it to stay on where that's supported.
+let wakeLock = null;
+async function keepAwake() {
+  if (!game || wakeLock || document.hidden || !navigator.wakeLock) return;
+  try {
+    const lock = wakeLock = await navigator.wakeLock.request('screen');
+    lock.addEventListener('release', () => { if (wakeLock === lock) wakeLock = null; });
+    if (!game) lock.release();
+  } catch (e) { wakeLock = null; /* optional: battery saver can refuse it */ }
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(); });
 
 let hurtShown = -1;
 function setHurt(v) {
@@ -493,6 +508,8 @@ function endGame() {
   if (game) game.clearInput();
   closeMenu(false);
   game = null;
+  controls.reset();
+  if (wakeLock) wakeLock.release();
   closeChat();
   document.body.classList.remove('playing');
 }
@@ -556,7 +573,9 @@ function openChat() {
   game.clearInput();
   chatIn.classList.remove('hidden');
   chatIn.value = '';
-  setTimeout(() => chatIn.focus(), 0);
+  // iOS only opens the keyboard from inside the tap itself; a typed Enter must not land in the box
+  if (controls.active) chatIn.focus();
+  else setTimeout(() => chatIn.focus(), 0);
 }
 function closeChat() {
   chatIn.classList.add('hidden');
@@ -570,6 +589,8 @@ chatIn.addEventListener('keydown', e => {
     closeChat();
   } else if (e.key === 'Escape') closeChat();
 });
+// on touch, dismissing the keyboard is the way to cancel
+chatIn.addEventListener('blur', () => { if (controls.active && game && game.chatting) closeChat(); });
 
 // ------------------------------------------------------------- game menu --
 // Esc opens this for everyone. The host's menu also pauses the round and adds the controls to restart or
@@ -580,7 +601,7 @@ function pmConfirm(btn, label, act) {
     if (btn.classList.contains('confirm')) { pmReset(); act(); return; }
     pmReset();
     btn.classList.add('confirm');
-    btn.textContent = 'Click again to confirm';
+    btn.textContent = 'Press again to confirm';
   };
 }
 function pmReset() {
@@ -618,6 +639,9 @@ pmConfirm($('pmEnd'), 'End round', () => { closeMenu(false); send({ t: 'end' });
 $('pmMute').onclick = () => { $('pmMute').textContent = `Sound: ${A.toggleMute() ? 'off' : 'on'}`; };
 
 // ----------------------------------------------------------------- input --
+const controls = new TouchControls(canvas, { game: () => game, openChat, closeChat, openMenu });
+// browsers only let sound start from a tap, and iOS only counts the end of one
+window.addEventListener('touchend', () => A.initAudio(), { passive: true });
 window.addEventListener('keydown', e => {
   if (!game || game.chatting) return;
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
@@ -629,12 +653,14 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (game.menuOpen) return;
+  controls.setActive(false);
   game.keyDown(e);
 });
 window.addEventListener('keyup', e => { if (game) game.keyUp(e); });
 window.addEventListener('blur', () => { if (game) game.clearInput(); });
 canvas.addEventListener('mousemove', e => {
   if (!game) return;
+  if (Math.abs(e.clientX - game.mouse.x) + Math.abs(e.clientY - game.mouse.y) > 3 && !controls.realMouse()) return;
   // a bumped mouse shouldn't break a held keyboard aim
   if (!game.fireKey && !game.lockKey && Math.abs(e.clientX - game.mouse.x) + Math.abs(e.clientY - game.mouse.y) > 3) game.aimMode = 'mouse';
   game.mouse.x = e.clientX;
@@ -642,7 +668,7 @@ canvas.addEventListener('mousemove', e => {
 });
 canvas.addEventListener('mousedown', e => {
   A.initAudio();
-  if (!game) return;
+  if (!game || !controls.realMouse()) return;
   if (game.chatting) closeChat();
   if (e.button === 0 && game.clickUI(e.clientX, e.clientY)) { e.preventDefault(); return; }
   if (e.button === 0) { game.mouse.down = true; game.aimMode = 'mouse'; }
@@ -657,6 +683,9 @@ window.addEventListener('mouseup', e => {
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { if (game) { game.cycle(e.deltaY > 0 ? 1 : -1); e.preventDefault(); } }, { passive: false });
 window.addEventListener('resize', () => renderer.resize());
+// some phones report the old size during the rotation itself
+window.addEventListener('orientationchange', () => setTimeout(() => renderer.resize(), 300));
+window.addEventListener('blur', () => controls.reset());
 
 setInterval(() => { if (game) send({ t: 'ping', id: performance.now() }); }, 2000);
 
@@ -695,6 +724,7 @@ function frame(now) {
   try {
     if (game) {
       if (renderer.map !== game.map) renderer.setMap(game.map);
+      controls.sync(game, dt);
       game.update(dt);
       game.render();
     } else {

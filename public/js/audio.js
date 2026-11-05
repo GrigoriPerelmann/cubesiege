@@ -6,7 +6,8 @@ let muted = false;
 const last = {};
 
 export function initAudio() {
-  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+  // iOS also has an 'interrupted' state, after a call or when coming back to the tab
+  if (ctx) { if (ctx.state !== 'running') ctx.resume(); return; }
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
   } catch (e) { return; }

@@ -2,6 +2,7 @@
 export const T = 32;
 const HMAX = 60; // extra space above each wall row for tall objects
 const LIGHT_DIV = 3; // lighting buffer resolution divider
+const MAX_TOUCH_PIXELS = 2.6e6;
 
 // ------------------------------------------------------------ utilities --
 function hash(x, y) {
@@ -80,20 +81,29 @@ export class Renderer {
   }
 
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.dpr = dpr;
+    const touch = window.matchMedia('(pointer: coarse)').matches;
     this.cw = window.innerWidth;
     this.ch = window.innerHeight;
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // big tablet screens: trade a little sharpness for a steady frame rate
+    if (touch) dpr = Math.min(dpr, Math.sqrt(MAX_TOUCH_PIXELS / (this.cw * this.ch)));
+    this.dpr = dpr;
     this.canvas.width = Math.floor(this.cw * dpr);
     this.canvas.height = Math.floor(this.ch * dpr);
-    // show roughly 980 x 610 world pixels whatever the window size
-    this.scale = Math.max(this.cw / 980, this.ch / 610);
+    // mobile browser bars come and go: CSS viewport units don't match innerHeight there
+    this.canvas.style.width = `${this.cw}px`;
+    this.canvas.style.height = `${this.ch}px`;
+    // show roughly 980 x 610 world pixels whatever the window size (the same area turned on its side
+    // for a tablet held upright)
+    this.scale = touch && this.ch > this.cw ? Math.max(this.cw / 610, this.ch / 980) : Math.max(this.cw / 980, this.ch / 610);
     this.light.width = Math.ceil(this.cw / LIGHT_DIV);
     this.light.height = Math.ceil(this.ch / LIGHT_DIV);
   }
 
   // ------------------------------------------------------------ map --
   setMap(map) {
+    // iOS is slow to free canvas memory and fails hard at its limit, so give the old map's back right away
+    for (const c of [this.floor, ...(this.rowCanvases || [])]) if (c) c.width = c.height = 0;
     this.map = map;
     this.theme = map.theme;
     const W = map.w * T, H = map.h * T;

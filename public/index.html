@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0e0d0c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Cube Siege">
 <title>Cube Siege</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;600;800&display=swap" rel="stylesheet">
@@ -13,6 +18,20 @@
 <canvas id="game"></canvas>
 <div id="vignette"></div>
 <div id="hurt"></div>
+
+<!-- touch controls: the sticks only show where the thumbs are, touches land on the canvas (see touch.js) -->
+<div id="touchUI">
+  <div id="stickL" class="stick"><i></i></div>
+  <div id="stickR" class="stick"><i></i></div>
+  <button id="tUse">Use</button>
+  <div id="tTop">
+    <button id="tFull">Full</button>
+    <button id="tChat">Chat</button>
+    <button id="tScores">Team</button>
+    <button id="tMenu">Menu</button>
+  </div>
+</div>
+<div id="rotateHint"><div><b>Turn your phone sideways</b><br>Cube Siege plays in landscape. If nothing happens, switch off rotation lock.</div></div>
 
 <!-- main menu -->
 <section id="menu" class="screen">
@@ -31,7 +50,7 @@
       <div class="col">
         <h3>Join a game</h3>
         <div class="row join">
-          <input id="code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false">
+          <input id="code" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
           <button id="joinBtn">Join</button>
         </div>
         <p class="muted small-text">Ask the host for the 4-letter room code or their invite link.
@@ -40,7 +59,10 @@
           until the round is over.</p>
       </div>
     </div>
-    <p class="help"><b>Keyboard:</b> WASD / arrows move &middot; hold Space to shoot: your aim locks so you can strafe &middot; Shift locks aim without shooting<br>
+    <p class="help touchOnly"><b>Touch:</b> left thumb moves &middot; right thumb shoots: hold to fire, drag to aim &middot;
+      tap a weapon to switch &middot; tap a card to pick a perk &middot; a USE button appears when there's something to use<br>
+      Best in landscape.</p>
+    <p class="help keysOnly"><b>Keyboard:</b> WASD / arrows move &middot; hold Space to shoot: your aim locks so you can strafe &middot; Shift locks aim without shooting<br>
       <b>Mouse:</b> aim with the mouse &middot; click to shoot<br>
       F or right-click use / take apart &middot; 1-0 / Q E / wheel switch weapon &middot; Z X C pick perks &middot; Enter chat &middot; Tab scores &middot; M mute &middot; Esc menu</p>
     <div id="status" class="status"></div>
@@ -131,7 +153,14 @@
       <button id="pmMute">Sound: on</button>
       <button id="pmLeave" class="ghost">Leave game</button>
     </div>
-    <table class="keys">
+    <table class="keys touchOnly">
+      <tr><td>Move</td><td>Left thumb, anywhere on the left half</td></tr>
+      <tr><td>Shoot</td><td>Right thumb: hold to fire where you face, drag to aim</td></tr>
+      <tr><td>Build</td><td>Drag to aim, let go to place</td></tr>
+      <tr><td>Use / take apart</td><td>Hold the button that appears</td></tr>
+      <tr><td>Weapons / perks</td><td>Tap them</td></tr>
+    </table>
+    <table class="keys keysOnly">
       <tr><td>Move</td><td>WASD / arrows</td></tr>
       <tr><td>Shoot</td><td>Hold Space (aim stays locked, so you can strafe) or left mouse</td></tr>
       <tr><td>Lock aim</td><td>Hold Shift</td></tr>
@@ -143,7 +172,7 @@
   </div>
 </section>
 
-<input id="chatIn" class="hidden" maxlength="140" placeholder="Chat (Enter to send, Esc to cancel)" autocomplete="off">
+<input id="chatIn" class="hidden" maxlength="140" placeholder="Chat (Enter to send, Esc to cancel)" autocomplete="off" enterkeyhint="send">
 <div id="toast" class="toast hidden"></div>
 
 <script type="module" src="js/main.js"></script>
