@@ -18,7 +18,7 @@
 <section id="menu" class="screen">
   <div class="panel wide">
     <h1 class="logo"><span>CUBE</span><span>SIEGE</span></h1>
-    <p class="tag">Co-op survival against endless waves of blocky undead.</p>
+    <p class="tag">Co-op survival against waves of blocky undead.</p>
     <div class="row">
       <label>Your name <input id="name" maxlength="16" autocomplete="off" spellcheck="false"></label>
     </div>
@@ -40,9 +40,9 @@
           until the round is over.</p>
       </div>
     </div>
-    <p class="help"><b>Keyboard:</b> WASD / arrows move &middot; Space shoot where you face (auto-aim helps)<br>
+    <p class="help"><b>Keyboard:</b> WASD / arrows move &middot; hold Space to shoot: your aim locks so you can strafe &middot; Shift locks aim without shooting<br>
       <b>Mouse:</b> aim with the mouse &middot; click to shoot<br>
-      1-0 / Q E / wheel switch weapon &middot; Z X C pick perks &middot; Enter chat &middot; Tab scores &middot; M mute &middot; Esc pause (host)</p>
+      F or right-click use / take apart &middot; 1-0 / Q E / wheel switch weapon &middot; Z X C pick perks &middot; Enter chat &middot; Tab scores &middot; M mute &middot; Esc menu</p>
     <div id="status" class="status"></div>
   </div>
 </section>
@@ -90,6 +90,9 @@
       <h4>Difficulty</h4>
       <div id="diffPick" class="seg"></div>
       <p id="diffDesc" class="muted small-text desc"></p>
+      <h4>Friendly fire</h4>
+      <div id="ffPick" class="seg"></div>
+      <p id="ffDesc" class="muted small-text desc"></p>
       <div id="foeBox">
         <h4>Undead types</h4>
         <div id="foePick" class="foes"></div>
@@ -113,6 +116,30 @@
     <div class="row actions">
       <button id="overBtn" class="big">Back to lobby</button>
     </div>
+  </div>
+</section>
+
+<!-- in-game menu (Esc). For the host it also pauses the game for everyone. -->
+<section id="pauseMenu" class="screen hidden">
+  <div class="panel">
+    <h2 id="pmTitle" class="pmTitle">PAUSED</h2>
+    <p id="pmNote" class="tag"></p>
+    <div class="pmBtns">
+      <button id="pmResume" class="big">Resume</button>
+      <button id="pmRestart">Restart round</button>
+      <button id="pmEnd">End round</button>
+      <button id="pmMute">Sound: on</button>
+      <button id="pmLeave" class="ghost">Leave game</button>
+    </div>
+    <table class="keys">
+      <tr><td>Move</td><td>WASD / arrows</td></tr>
+      <tr><td>Shoot</td><td>Hold Space (aim stays locked, so you can strafe) or left mouse</td></tr>
+      <tr><td>Lock aim</td><td>Hold Shift</td></tr>
+      <tr><td>Use / take apart</td><td>Hold F or right mouse</td></tr>
+      <tr><td>Weapons</td><td>1-0, Q / E, mouse wheel</td></tr>
+      <tr><td>Perks</td><td>Z X C or click</td></tr>
+      <tr><td>Chat / scores / mute</td><td>Enter / Tab / M</td></tr>
+    </table>
   </div>
 </section>
 

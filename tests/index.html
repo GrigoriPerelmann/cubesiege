@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Cube Siege tests</title>
+<style>body { background: #111; color: #ddd; font: 13px/1.5 monospace; padding: 16px; white-space: pre-wrap; } </style>
+<body>Running...
+<script type="module">
+import { runAll } from './sim.test.mjs';
+document.body.textContent = '';
+runAll(s => { document.body.append(s + '\n'); scrollTo(0, 1e9); });
+</script>

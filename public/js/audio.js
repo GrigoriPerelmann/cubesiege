@@ -21,6 +21,8 @@ export function initAudio() {
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 }
 
+export const isMuted = () => muted;
+
 export function toggleMute() {
   muted = !muted;
   if (master) master.gain.value = muted ? 0 : 0.55;
@@ -96,6 +98,8 @@ const SOUNDS = {
   acid: (t, o) => { noise(t, 0.4, { freq: 2500, q: 0.8, vol: 0.18, type: 'highpass', attack: 0.01 }, o); },
   leap: (t, o) => { tone(t, 0.25, { freq: 180, to: 520, type: 'sawtooth', vol: 0.1 }, o); noise(t, 0.2, { freq: 900, q: 1, vol: 0.15 }, o); },
   slam: (t, o) => { noise(t, 0.7, { freq: 300, q: 0.5, vol: 0.9, type: 'lowpass', sweep: 50 }, o); tone(t, 0.4, { freq: 60, to: 30, type: 'sine', vol: 0.6 }, o); },
+  door: (t, o) => { noise(t, 1.4, { freq: 240, q: 0.6, vol: 0.7, type: 'lowpass', attack: 0.1, sweep: 90 }, o); tone(t, 1.3, { freq: 65, to: 42, type: 'sawtooth', vol: 0.22, attack: 0.1 }, o); [660, 880].forEach((f, i) => tone(t + 0.9 + i * 0.14, 0.22, { freq: f, type: 'square', vol: 0.1 }, o)); },
+  task: (t, o) => { [660, 990].forEach((f, i) => tone(t + i * 0.08, 0.18, { freq: f, type: 'triangle', vol: 0.2 }, o)); },
   win: (t, o) => { [523, 659, 784, 1046, 1318].forEach((f, i) => tone(t + i * 0.12, 0.5, { freq: f, type: 'triangle', vol: 0.18 }, o)); },
   over: (t, o) => { [392, 349, 311, 262, 196].forEach((f, i) => tone(t + i * 0.22, 0.5, { freq: f, type: 'sawtooth', vol: 0.12 }, o)); },
 };

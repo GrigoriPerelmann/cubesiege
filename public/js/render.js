@@ -44,7 +44,10 @@ export const LOOKS = {
   wraith: { s: 1, skin: '#c8e0f0', shirt: '#6a8ab0', pants: '#4a6a90', eye: '#40e8ff', robe: true, ghost: true },
   juggernaut: { s: 2.1, skin: '#6f6a78', shirt: '#33333d', pants: '#22222a', eye: '#ff2a2a', zombie: true, big: true, glow: '#ff3a2a', spikes: '#c8c0b0' },
   splitling: { s: 0.62, skin: '#c48aa4', shirt: '#6a3050', pants: '#3a2030', eye: '#ffe040', zombie: true },
+  nest: { s: 1.5, skin: '#8a4a6a', shirt: '#5a2a4a', pants: '#3a1a30', eye: '#ffe040' },
 };
+// Dr. Block, the scientist you escort in Breakthrough missions
+export const VIP_LOOK = { name: 'Dr. Block', s: 1, skin: '#e8c8a0', pants: '#3a3a44', eye: '#1b1b1b', hat: 'hardhat' };
 // bigger, gold-trimmed variant of a look for elite undead
 const eliteCache = {};
 export function eliteLook(type) {
@@ -64,7 +67,7 @@ export const CHARS = [
   { name: 'Viking', s: 1, skin: '#e8bc94', pants: '#5a3e26', eye: '#1b1b1b', hat: 'viking', beard: '#c07a30' },
 ];
 export const BLOOD = { shambler: '#8a1010', sprinter: '#7a1414', brute: '#5a0d2a', warlock: '#d0601a', bloater: '#7fa020', colossus: '#6a0808',
-  leaper: '#7a1a10', spitter: '#8acc30', riot: '#6a1010', shaman: '#3a8a3a', splitter: '#a03070', wraith: '#9ad8ff', juggernaut: '#5a0808', splitling: '#a03070' };
+  leaper: '#7a1a10', spitter: '#8acc30', riot: '#6a1010', shaman: '#3a8a3a', splitter: '#a03070', wraith: '#9ad8ff', juggernaut: '#5a0808', splitling: '#a03070', nest: '#7a2a5a' };
 
 // ------------------------------------------------------------ renderer --
 export class Renderer {
@@ -378,7 +381,7 @@ export class Renderer {
     const g = c.getContext('2d');
     for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
       const ch = m.rows[y][x];
-      g.fillStyle = ch === '#' ? '#8a8378' : ch === 'B' ? '#6d5a3f' : ch === 'T' ? '#4e6b3c' : ch === 'S' ? '#5a3a1a' : '#26231f';
+      g.fillStyle = ch === '#' ? '#8a8378' : ch === 'B' ? '#6d5a3f' : ch === 'T' ? '#4e6b3c' : ch === 'S' ? '#5a3a1a' : ch === 'D' ? '#c04a30' : '#26231f';
       g.fillRect(x * s, y * s, s, s);
     }
     return c;
@@ -671,6 +674,10 @@ export class Renderer {
     const R = (x, y, ww, hh, c) => { ctx.fillStyle = col(c); ctx.fillRect(x, y, ww, hh); };
     const cx = hx + w / 2;
     switch (hat) {
+      case 'hardhat':
+        box(hx - 1, top - 3, w + 2, 6, '#f2c230');
+        R(hx - 3, top + 2, w + 6, 2, '#d8a820');
+        break;
       case 'helmet':
         box(hx - 1, top - 3, w + 2, 7, '#4b5a35');
         R(hx - 2, top + 3, w + 4, 2, '#36412a');
@@ -774,6 +781,103 @@ export class Renderer {
     ctx.fillRect(x - 19, y0 - h - 9, 38 * Math.max(0, hp) / 100, 4);
   }
 
+  // one tile row of a sealed blast door, built like the wall tiles around it
+  drawDoor(ctx, x, y, w, last, t) {
+    const h = 30;
+    if (last) {
+      ctx.fillStyle = '#3a3d42';
+      ctx.fillRect(x, y + T - h, w, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(x, y + T - 8, w, 8);
+      ctx.fillStyle = (t * 2) % 1 < 0.5 ? '#ff4030' : '#601810';
+      ctx.fillRect(x + w / 2 - 4, y + T - h + 7, 8, 4);
+    }
+    ctx.fillStyle = '#4a4e54';
+    ctx.fillRect(x, y - h, w, T);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y - h, w, T); ctx.clip();
+    ctx.strokeStyle = 'rgba(240,190,40,0.8)';
+    ctx.lineWidth = 7;
+    for (let k = -T; k < w + T; k += 20) { ctx.beginPath(); ctx.moveTo(x + k, y - h); ctx.lineTo(x + k + T, y - h + T); ctx.stroke(); }
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y - h + 0.5, w - 1, T - 1);
+  }
+
+  // everything past the next door stays hidden until it opens
+  drawFog(ctx, x0, t) {
+    const v = this.view;
+    if (x0 >= v.x1) return;
+    const top = v.y0 - 80, hh = v.y1 - v.y0 + 160;
+    const edge = ctx.createLinearGradient(x0 - 26, 0, x0 + 26, 0);
+    edge.addColorStop(0, 'rgba(0,0,0,0)');
+    edge.addColorStop(1, this.theme.bg);
+    ctx.fillStyle = edge;
+    ctx.fillRect(x0 - 26, top, 52, hh);
+    ctx.fillStyle = this.theme.bg;
+    ctx.fillRect(x0 + 26, top, v.x1 - x0 + 40, hh);
+  }
+
+  // a console you work at with the interact key
+  drawTerminal(ctx, x, y, pct, t, stalled = false) {
+    const x0 = x - 12, y0 = y - 12, h = 20;
+    ctx.fillStyle = '#34383e';
+    ctx.fillRect(x0, y0 + 24 - h, 24, h);
+    ctx.fillStyle = '#50565e';
+    ctx.fillRect(x0, y0 - h, 24, 24);
+    const done = pct >= 100;
+    ctx.fillStyle = done ? '#123a1c' : '#0c2230';
+    ctx.fillRect(x0 + 3, y0 - h + 3, 18, 12);
+    ctx.fillStyle = done ? '#5fff6a' : stalled ? '#ff6050' : '#5ff0ff';
+    ctx.fillRect(x0 + 4, y0 - h + 4, 16 * Math.max(0.06, pct / 100), 3);
+    if (!done && (t * 3) % 1 < 0.6) ctx.fillRect(x0 + 4, y0 - h + 9, 6, 2);
+    ctx.fillStyle = '#ffb030';
+    ctx.fillRect(x0 + 4, y0 - h + 17, 4, 3);
+    ctx.fillStyle = '#e8423f';
+    ctx.fillRect(x0 + 11, y0 - h + 17, 4, 3);
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, y0 - h + 0.5, 23, 24 + h - 1);
+  }
+
+  // floor marking of an area to stand in, with a progress arc
+  drawRing(ctx, x, y, r, pct, t, rgb) {
+    const pulse = 0.5 + Math.sin(t * 3) * 0.5;
+    ctx.fillStyle = `rgba(${rgb},${0.08 + pulse * 0.05})`;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.setLineDash([12, 9]);
+    ctx.lineDashOffset = -t * 18;
+    ctx.strokeStyle = `rgba(${rgb},0.65)`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.8, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    if (pct > 0) {
+      ctx.strokeStyle = `rgba(${rgb},0.95)`;
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.8, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct / 100); ctx.stroke();
+    }
+  }
+
+  // a pulsing sac rooted to the ground that keeps hatching undead
+  drawNest(ctx, x, y, hp, t, id, flash) {
+    const col = c => (flash ? '#ffffff' : c);
+    const p = Math.sin(t * 3 + id) * 0.08;
+    ctx.fillStyle = col('#3a1a30');
+    ctx.beginPath(); ctx.ellipse(x, y - 2, 26, 15, 0, 0, Math.PI * 2); ctx.fill();
+    for (const [ox, oy, r] of [[-10, -11, 10], [11, -9, 9], [0, -21, 15]]) {
+      ctx.fillStyle = col('#7a3a5e');
+      ctx.beginPath(); ctx.arc(x + ox, y + oy, r * (1 + p), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = col('#a85a84');
+      ctx.beginPath(); ctx.arc(x + ox - r * 0.25, y + oy - r * 0.3, r * 0.5 * (1 - p), 0, Math.PI * 2); ctx.fill();
+    }
+    if (!flash) {
+      ctx.fillStyle = `rgba(255,224,64,${0.6 + p * 3})`;
+      ctx.beginPath(); ctx.arc(x, y - 22, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    this.miniBar(ctx, x, y - 44, hp, '#ff5a8a');
+  }
+
   drawHazard(ctx, x, y, r, life, t, id) {
     const f = Math.min(1, life / 1.2);
     ctx.fillStyle = `rgba(120,200,30,${0.32 * f})`;
@@ -846,7 +950,7 @@ export class Renderer {
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(x, y + 2, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
     const by = y - h;
-    if (kind === 3) {
+    if (kind === 3 || kind === 5) {
       const pulse = 0.5 + Math.sin(t * 4 + id) * 0.5;
       ctx.fillStyle = `rgba(255,80,40,${0.15 + pulse * 0.2})`;
       ctx.beginPath(); ctx.arc(x, by, 18 + pulse * 4, 0, Math.PI * 2); ctx.fill();

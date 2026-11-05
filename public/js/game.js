@@ -1,5 +1,5 @@
 // Client-side game: interpolation, local movement prediction, effects and HUD.
-import { T, LOOKS, CHARS, BLOOD, GUNS, drawWeaponIcon, shade, eliteLook } from './render.js';
+import { T, LOOKS, CHARS, BLOOD, GUNS, VIP_LOOK, drawWeaponIcon, shade, eliteLook } from './render.js';
 import * as A from './audio.js';
 
 const INTERP = 0.11;          // seconds of interpolation delay
@@ -7,6 +7,26 @@ const SEND_RATE = 1 / 30;
 const HAIR = ['#3a2a1e', '#d0a040', '#1a1a1a', '#8a3a1a', '#e8dcc0', '#5a3a2a', '#2a2a3a', '#b0602a'];
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 const PERK_KEYS = ['z', 'x', 'c'];
+const USE_TEXT = { 1: 'Take apart', 2: 'Hack', 3: 'Drop fuel' };
+// objective spots: label for the off-screen arrows, and colour of the floor ring
+const SITE_INFO = {
+  term: { label: 'HACK', color: '#5ff0ff' },
+  gen: { label: 'GENERATOR', color: '#ffd030' },
+  hold: { label: 'HOLD', color: '#c890ff', ring: '200,144,255' },
+  evac: { label: 'EXTRACT', color: '#7fff8f', ring: '127,255,143' },
+  fix: { label: 'DOOR', color: '#5ff0ff' },
+};
+const TASK_TEXT = {
+  clear: ['CLEAR THE ZONE', 'Kill every undead to open the door'],
+  nests: ['DESTROY THE NESTS', 'They keep hatching until you burn them out'],
+  hack: ['HACK THE TERMINAL', 'Hold [F] next to it. You can\'t shoot while you work: have someone guard you'],
+  fuel: ['RESTART THE GENERATOR', 'Carry the fuel cans to it. Your hands are full: pistol only'],
+  hold: ['HOLD THE CIRCLE', 'Keep at least one survivor inside until it fills up'],
+  charge: ['GUARD THE BREACH CHARGE', 'It will blow the door. Don\'t let them reach it'],
+  fix: ['COVER DR. BLOCK', 'They work on the door, but stop whenever an undead gets close'],
+  boss: ['KILL THE BOSS', 'The door stays shut until it is dead'],
+  extract: ['GET TO THE EXTRACTION POINT', 'Everyone still standing has to be inside the circle'],
+};
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, f) => a + (b - a) * f;
 function lerpAngle(a, b, f) {
@@ -19,6 +39,10 @@ export class ClientGame {
     this.r = renderer;
     this.net = net;
     this.hooks = hooks;           // { openChat() }
+    this.vip = start.vip || null;
+    this.ffOn = !!start.ff && start.ff !== 'off';
+    this.menuOpen = false;
+    this.ffNoteT = 0;
     this.myId = start.you;
     this.map = start.map;
     this.weapons = start.weapons;
@@ -46,8 +70,10 @@ export class ClientGame {
     this.solid = new Uint8Array(m.w * m.h);
     for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
       const ch = m.rows[y][x];
-      if (ch === '#' || ch === 'B' || ch === 'T') this.solid[y * m.w + x] = 1;
+      if (ch === '#' || ch === 'B' || ch === 'T' || ch === 'D') this.solid[y * m.w + x] = 1;
     }
+    this.doorMask = 0;
+    this.fogX = this.fogTarget();     // world x where the hidden part of the map starts
     this.structTiles = new Set();
     this.snaps = [];
     this.evq = [];
@@ -61,6 +87,9 @@ export class ClientGame {
     this.mouse = { x: renderer.cw / 2, y: renderer.ch / 2, down: false };
     this.aimMode = 'keys';       // 'keys' (Space fires where you face) until the mouse is used
     this.fireKey = false;
+    this.lockKey = false;        // Shift: hold the keyboard aim without firing
+    this.useKey = false;         // F
+    this.useMouse = false;       // right mouse button
     this.keyAim = 0;
     this.assist = null;          // enemy the keyboard aim-assist locked on to
     this.particles = [];
@@ -115,7 +144,8 @@ export class ClientGame {
     if (me.pk) this.perks = me.pk;
     if (me.po !== undefined) { this.offer = me.po || null; this.picks = me.pp || 0; }
     this.un = s.un;
-    if (!(this.un >> this.weapon & 1)) this.weapon = 0;
+    if (!(this.un >> this.weapon & 1) || me.cr) this.weapon = 0;
+    if (s.dm !== undefined && s.dm !== this.doorMask) this.openDoors(s.dm);
     const mine = s.P.get(this.myId);
     if (mine) {
       this.myState = mine[6];
@@ -129,6 +159,30 @@ export class ClientGame {
       this.me.y = me.tp[1];
       this.me.init = true;
     }
+  }
+
+  // doors the host opened stop being solid here too
+  openDoors(mask) {
+    const m = this.map;
+    (m.zones || []).forEach((z, i) => {
+      if (!z.door || !(mask >> i & 1) || this.doorMask >> i & 1) return;
+      const d = z.door;
+      for (let y = d.y; y < d.y + d.h; y++) for (let x = d.x; x < d.x + d.w; x++) this.solid[y * m.w + x] = 0;
+    });
+    this.doorMask = mask;
+  }
+
+  fogTarget() {
+    const zs = this.map.zones;
+    if (!zs) return Infinity;
+    const z = zs.find((q, i) => q.door && !(this.doorMask >> i & 1));
+    return z ? (z.door.x + z.door.w) * T : Infinity;
+  }
+
+  // everyone in the snapshots, including Dr. Block who isn't in the room's roster
+  who(id) {
+    if (this.vip && id === this.vip.id) return { ...this.vip, look: VIP_LOOK };
+    return this.roster.get(id) || { color: '#888', name: '?' };
   }
 
   serverNow() {
@@ -150,7 +204,7 @@ export class ClientGame {
       return {
         id: p[0], x: q ? lerp(q[1], p[1], f) : p[1], y: q ? lerp(q[2], p[2], f) : p[2],
         a: q ? lerpAngle(q[3] / 100, ang, f) : ang, hp: p[4], w: p[5], state: p[6], rev: p[7],
-        shooting: p[8], mult: p[9], downT: p[10], kills: p[11], score: p[12], maxhp: p[13] || 100,
+        shooting: p[8], mult: p[9], downT: p[10], kills: p[11], score: p[12], maxhp: p[13] || 100, carry: p[14] & 1, busy: p[14] & 2,
       };
     });
     const enemies = b.e.map(e => {
@@ -166,7 +220,7 @@ export class ClientGame {
       return { id: p[0], kind: p[1], x: q ? lerp(q[2], p[2], f) : p[2], y: q ? lerp(q[3], p[3], f) : p[3],
         vx: q ? p[2] - q[2] : 1, vy: q ? p[3] - q[3] : 0 };
     });
-    return { players, enemies, projs, items: b.it, structs: b.st, hazards: b.hz || [] };
+    return { players, enemies, projs, items: b.it, structs: b.st, hazards: b.hz || [], sites: b.zs || [] };
   }
 
   // ------------------------------------------------------------- input --
@@ -174,6 +228,8 @@ export class ClientGame {
     const k = e.key.toLowerCase();
     if (k === 'tab') { this.showScores = true; e.preventDefault(); return; }
     if (k === ' ') { this.fireKey = true; this.aimMode = 'keys'; return; }
+    if (k === 'shift') { this.lockKey = true; this.aimMode = 'keys'; return; }
+    if (k === 'f') { this.useKey = true; return; }
     this.keys.add(k);
     const pi = PERK_KEYS.indexOf(k);
     if (pi >= 0 && this.offer && this.offer[pi] !== undefined) { this.pickPerk(pi); return; }
@@ -191,6 +247,8 @@ export class ClientGame {
     const k = e.key.toLowerCase();
     if (k === 'tab') { this.showScores = false; e.preventDefault(); }
     if (k === ' ') this.fireKey = false;
+    if (k === 'shift') this.lockKey = false;
+    if (k === 'f') this.useKey = false;
     this.keys.delete(k);
   }
 
@@ -198,6 +256,9 @@ export class ClientGame {
     this.keys.clear();
     this.mouse.down = false;
     this.fireKey = false;
+    this.lockKey = false;
+    this.useKey = false;
+    this.useMouse = false;
     this.showScores = false;
   }
 
@@ -218,6 +279,7 @@ export class ClientGame {
 
   select(i) {
     if (i < 0 || i >= this.weapons.length || !(this.un >> i & 1) || i === this.weapon) return;
+    if (this.priv.cr) { this.announce('HANDS FULL', 'Only the pistol while you carry fuel. [F] drops it', 1.4, true); return; }
     this.weapon = i;
     this.switchT = 1.3;
     this.fireCd = Math.max(this.fireCd, 0.12);
@@ -280,20 +342,27 @@ export class ClientGame {
     while (this.evq.length && (this.evq[0].tm <= rt || this.evq.length > 6)) this.handleEvents(this.evq.shift().ev);
     this.view = this.interp(rt);
     this.switchT = Math.max(0, this.switchT - dt);
+    this.ffNoteT = Math.max(0, this.ffNoteT - dt);
     const alive = this.myState === 0 && !this.paused;
+    const frozen = this.chatting || this.menuOpen;
     const r = this.r;
+    const target = this.fogTarget();
+    if (target === Infinity) this.fogX = this.fogX < Infinity ? this.fogX + dt * 900 : Infinity;
+    else this.fogX += clamp(target - this.fogX, -dt * 900, dt * 900);
+    if (this.fogX > this.map.w * T + 80) this.fogX = Infinity;
 
     // --- local movement
     if (alive && this.me.init) {
       let mx = 0, my = 0;
-      if (!this.chatting) {
+      if (!frozen) {
         if (this.keys.has('w') || this.keys.has('arrowup')) my -= 1;
         if (this.keys.has('s') || this.keys.has('arrowdown')) my += 1;
         if (this.keys.has('a') || this.keys.has('arrowleft')) mx -= 1;
         if (this.keys.has('d') || this.keys.has('arrowright')) mx += 1;
       }
       const l = Math.hypot(mx, my);
-      if (l > 0) this.keyAim = Math.atan2(my, mx);
+      // Holding Space (or Shift) locks the aim: the keys only move you, so you can strafe and back away
+      if (l > 0 && !this.fireKey && !this.lockKey) this.keyAim = Math.atan2(my, mx);
       if (l > 0) {
         const step = this.speed * dt / l;
         const n = Math.max(1, Math.ceil(this.speed * dt / 8));
@@ -307,7 +376,15 @@ export class ClientGame {
     // --- aim
     let wx, wy;
     if (this.aimMode === 'keys') {
-      this.me.a = this.assistAim(this.keyAim);
+      if (this.ws[this.weapon].kind === 'place') {
+        // building goes exactly where you face, never towards the nearest enemy
+        this.assist = null;
+        this.me.a = this.keyAim;
+      } else {
+        this.me.a = this.assistAim(this.keyAim);
+        // while firing the aim tracks the locked target, so strafing around it doesn't lose it
+        if (this.fireKey && this.assist) this.keyAim = this.me.a;
+      }
       wx = this.me.x + Math.cos(this.keyAim) * 380;
       wy = this.me.y + Math.sin(this.keyAim) * 380;
     } else {
@@ -315,13 +392,15 @@ export class ClientGame {
       [wx, wy] = r.toWorld(this.mouse.x, this.mouse.y);
       this.me.a = Math.atan2(wy - (this.me.y - 14), wx - this.me.x);
     }
-    const trigger = (this.mouse.down || this.fireKey) && !this.chatting;
+    const trigger = (this.mouse.down || this.fireKey) && !frozen;
+    const using = (this.useKey || this.useMouse) && !frozen;
 
     // --- local fire feedback (server is authoritative for hits)
     const w = this.ws[this.weapon];
     this.fireCd -= dt;
     this.recoil = Math.max(0, this.recoil - dt * 6);
-    if (alive && trigger) {
+    const busy = using && this.priv.uk > 0 && this.priv.uk < 3;
+    if (alive && trigger && !busy) {
       const ammo = this.priv.am[this.weapon];
       if (ammo === 0) {
         if (this.fireCd <= 0) { A.play('empty', 0.8); this.fireCd = 0.3; this.autoSwitch(); }
@@ -336,7 +415,7 @@ export class ClientGame {
     if (this.sendT <= 0 && !this.paused) {
       this.sendT = SEND_RATE;
       this.net.send({ t: 'in', x: +this.me.x.toFixed(1), y: +this.me.y.toFixed(1), a: +this.me.a.toFixed(3),
-        f: alive && trigger ? 1 : 0, w: this.weapon });
+        f: alive && trigger ? 1 : 0, i: alive && using ? 1 : 0, w: this.weapon });
     }
 
     // --- ambient effects from state
@@ -344,7 +423,7 @@ export class ClientGame {
       for (const p of this.view.players) {
         const isMe = p.id === this.myId;
         const wid = isMe ? this.weapon : p.w;
-        const firing = isMe ? alive && trigger && this.priv.am[wid] !== 0 : p.shooting;
+        const firing = isMe ? alive && trigger && !busy && this.priv.am[wid] !== 0 : p.shooting;
         if (this.weapons[wid] && this.weapons[wid].id === 'flame' && firing && p.state === 0) {
           const px = isMe ? this.me.x : p.x, py = isMe ? this.me.y : p.y, pa = isMe ? this.me.a : p.a;
           this.flameFx(px, py, pa);
@@ -384,6 +463,7 @@ export class ClientGame {
 
   // Keyboard aiming: shoot where you face, but snap to an enemy close to that direction.
   assistAim(base) {
+    const prev = this.assist;
     this.assist = null;
     if (!this.view) return base;
     let best = null, bestScore = 1e9;
@@ -394,7 +474,8 @@ export class ClientGame {
       if (diff > Math.PI) diff = Math.PI * 2 - diff;
       const cone = d < 70 ? 0.9 : 0.38;    // very close enemies get a wider cone
       if (diff > cone) continue;
-      const score = d * (1 + diff * 4);
+      // stay on the current target while it is still a decent choice, so the aim doesn't flicker
+      const score = d * (1 + diff * 4) * (e.id === prev ? 0.6 : 1);
       if (score < bestScore) { bestScore = score; best = e; }
     }
     if (!best) return base;
@@ -469,7 +550,7 @@ export class ClientGame {
           const [, x, y, tid, pts, mult, pid] = e;
           const type = this.etypes[tid];
           const L = LOOKS[type];
-          const big = type === 'colossus' || type === 'juggernaut' ? 3 : type === 'brute' ? 1.8 : type === 'splitling' ? 0.6 : 1;
+          const big = type === 'colossus' || type === 'juggernaut' ? 3 : type === 'brute' || type === 'nest' ? 1.8 : type === 'splitling' ? 0.6 : 1;
           r.splat(x, y, 10 * big, BLOOD[type]);
           for (let i = 0; i < 9 * big; i++) {
             const colr = [L.skin, L.shirt, L.pants, BLOOD[type]][i % 4];
@@ -479,8 +560,8 @@ export class ClientGame {
           this.sound('splat', x, y, type === 'colossus' ? 1 : 0.6);
           if (type === 'colossus' || type === 'juggernaut') { this.shake = 14; this.announce(`${type.toUpperCase()} SLAIN`, '', 2.5); }
           if (pts > 0) {
-            const info = this.roster.get(pid);
-            this.texts.push({ x, y: y - 30, text: `+${pts}` + (mult > 1 ? ` x${mult}` : ''), color: info ? info.color : '#fff', life: 1.1, max: 1.1, big: pid === this.myId });
+            const info = this.who(pid);
+            this.texts.push({ x, y: y - 30, text: `+${pts}` + (mult > 1 ? ` x${mult}` : ''), color: pid ? info.color : '#fff', life: 1.1, max: 1.1, big: pid === this.myId });
           }
           this.anim.delete(e[8]);
           this.flash.delete(e[8]);
@@ -576,6 +657,52 @@ export class ClientGame {
           } else this.sysChat(`${this.name(e[1])} took ${pk.name}.`);
           break;
         }
+        case 'ff':
+          // only nag the shooter now and then; their victim sees the damage flash anyway
+          if (e[1] === this.myId && e[2] !== this.myId && this.ffNoteT <= 0) {
+            this.ffNoteT = 2.5;
+            this.announce('FRIENDLY FIRE!', `You hit ${this.name(e[2])}`, 1.4, true, '#ff8a50');
+          }
+          break;
+        case 'dm': {
+          const [, pid, type, refund] = e;
+          const p = this.latest.P.get(pid);
+          if (p) {
+            this.sound('break', p[1], p[2], 0.5);
+            if (pid === this.myId) this.texts.push({ x: p[1], y: p[2] - 30, text: refund ? 'TAKEN APART +1' : 'TAKEN APART', color: '#d9a441', life: 1, max: 1 });
+          }
+          break;
+        }
+        case 'zone': {
+          const zs = this.map.zones.length;
+          A.play('wave', 1);
+          this.announce(`ZONE ${e[1] + 1} / ${zs}`, e[2] || '', 2.6);
+          break;
+        }
+        case 'task': {
+          const tx = TASK_TEXT[e[1]];
+          if (tx) this.announce(tx[0], tx[1], 4, true, '#8af0a0');
+          break;
+        }
+        case 'task_ok':
+          A.play('task', 0.9);
+          this.lights.push({ x: e[1], y: e[2], r: 200, i: 0.7, life: 0.4, max: 0.4 });
+          for (let i = 0; i < 16; i++) this.addP({ t: 'spark', x: e[1], y: e[2], z: 16, vx: (Math.random() - 0.5) * 220, vy: (Math.random() - 0.5) * 220, vz: 30, life: 0.5, size: 3, color: '#7fff8f' });
+          break;
+        case 'door': {
+          const d = this.map.zones[e[1]].door;
+          A.play('door', 1);
+          this.shake = Math.max(this.shake, 9);
+          for (let y = d.y; y < d.y + d.h; y++) {
+            for (let i = 0; i < 12; i++) this.addP({ t: 'smoke', x: (d.x + Math.random() * d.w) * T, y: (y + Math.random()) * T, z: 6, vx: (Math.random() - 0.5) * 120, vy: (Math.random() - 0.5) * 80, vz: 25, life: 1.2, size: 8, grow: 16, drag: 2, color: '#7a7060' });
+            this.lights.push({ x: (d.x + 1) * T, y: y * T, r: 220, i: 0.6, life: 0.5, max: 0.5 });
+          }
+          break;
+        }
+        case 'zclr':
+          A.play('clear', 1);
+          this.announce('THE DOOR IS OPEN', 'Pick a perk [Z] [X] [C], restock, then move up', 3.4, false, '#8af0a0');
+          break;
         case 'sw':
           A.play('revive', e[1] === this.myId ? 1 : 0.4);
           if (e[1] === this.myId) this.announce('SECOND WIND', 'Back on your feet!', 2, true);
@@ -590,8 +717,13 @@ export class ClientGame {
           break;
         case 'down': {
           const n = this.name(e[1]);
-          if (e[1] === this.myId) { A.play('down', 1); this.announce('YOU ARE DOWN', 'A teammate must stand next to you to revive you', 3); }
-          else { this.sysChat(`${n} is down! Go revive them.`); A.play('down', 0.6); }
+          const by = e[2] && e[2] !== e[1] ? this.name(e[2]) : null;
+          if (e[1] === this.myId) { A.play('down', 1); this.announce('YOU ARE DOWN', by ? `Shot by ${by}! A teammate must stand next to you to revive you` : 'A teammate must stand next to you to revive you', 3); }
+          else {
+            this.sysChat(by ? `${by} shot ${n} down! Go revive them.` : `${n} is down! Go revive them.`);
+            A.play('down', 0.6);
+            if (this.vip && e[1] === this.vip.id) this.announce(`${n.toUpperCase()} IS DOWN`, 'Revive them or the mission fails!', 3);
+          }
           break;
         }
         case 'rev':
@@ -601,6 +733,11 @@ export class ClientGame {
         case 'dead': this.sysChat(`${this.name(e[1])} bled out.`); break;
         case 'pk': {
           const [, pid, kind, x, y, u] = e;
+          if (kind === 5) {
+            A.play('pickup', pid === this.myId ? 1 : 0.5);
+            if (pid === this.myId) this.announce('FUEL PICKED UP', 'Bring it to the generator. Hands full: pistol only', 2.2, true, '#ff8a50');
+            break;
+          }
           if (kind === 3) {
             A.play('unlock', pid === this.myId ? 1 : 0.6);
             const ob = this.latest && this.latest.ob;
@@ -635,7 +772,8 @@ export class ClientGame {
           const bosses = Array.isArray(e[2]) ? e[2].map(t => this.etypes[t]) : [];
           const sub = bosses.length > 1 ? 'Multiple bosses are coming!' : bosses[0] === 'juggernaut' ? 'The Juggernaut is coming! Dodge its charge.'
             : bosses[0] ? 'A Colossus is coming!' : 'Here they come...';
-          this.announce(`WAVE ${e[1]}`, sub, 2.8);
+          if (this.map.zones) this.sysChat(sub);
+          else this.announce(`WAVE ${e[1]}`, sub, 2.8);
           const muts = (e[3] || []).map(id => this.mutDefs[id]).filter(Boolean);
           if (muts.length && this.mode === 'gauntlet') {
             this.announce(muts.map(m => m.name.toUpperCase()).join(' + '), muts.map(m => m.desc).join(' · '), 3.4, true, '#c890ff');
@@ -651,8 +789,8 @@ export class ClientGame {
   }
 
   name(id) {
-    const info = this.roster.get(id);
-    return info ? info.name : 'Someone';
+    const info = this.who(id);
+    return info.name === '?' ? 'Someone' : info.name;
   }
 
   sysChat(text) {
@@ -823,6 +961,30 @@ export class ClientGame {
       lights.push({ x: h[1], y: h[2], r: 70, i: 0.35 });
     }
     for (const s of v.structs) if (s[1] === 1) r.drawMine(ctx, s[2], s[3], t + s[0]);
+    // standing areas are painted on the floor; consoles stand in the scene with everything else
+    for (const s of v.sites) {
+      const [kind, x, y, rad, pct, stalled] = s;
+      if (kind === 'hold' || kind === 'evac') {
+        r.drawRing(ctx, x, y, rad, pct, t, SITE_INFO[kind].ring);
+        lights.push({ x, y, r: rad * 2.4, i: 0.55 });
+      } else if (kind === 'term' || kind === 'fix') {
+        drawables.push({ y: y + 12, draw: c => r.drawTerminal(c, x, y, pct, t, stalled) });
+        lights.push({ x, y: y - 16, r: 120, i: 0.75 });
+      } else if (kind === 'gen') {
+        r.shadow(x, y + 6, 18);
+        drawables.push({ y: y + 15.5, draw: c => r.drawGenerator(c, x, y, 100, pct >= 100 ? t : 0) });
+        lights.push({ x, y: y - 10, r: 200, i: 0.7 });
+      }
+    }
+    // blast doors, one tile row at a time so characters sort correctly against them
+    (this.map.zones || []).forEach((z, i) => {
+      const d = z.door;
+      if (!d || this.doorMask >> i & 1) return;
+      for (let ty = d.y; ty < d.y + d.h; ty++) {
+        drawables.push({ y: (ty + 1) * T - 0.5, draw: c => r.drawDoor(c, d.x * T, ty * T, d.w * T, ty === d.y + d.h - 1, t) });
+      }
+      lights.push({ x: (d.x + d.w / 2) * T, y: (d.y + d.h / 2) * T, r: 150, i: 0.55 });
+    });
 
     // players
     for (const p of v.players) {
@@ -831,18 +993,26 @@ export class ClientGame {
       const x = isMe && p.state === 0 ? this.me.x : p.x;
       const y = isMe && p.state === 0 ? this.me.y : p.y;
       const a = isMe ? this.me.a : p.a;
-      const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+      const info = this.who(p.id);
       const ph = this.walk('p' + p.id, x, y, 0.2);
       const wid = isMe ? this.weapons[this.weapon].id : this.weapons[p.w].id;
       const flash = (this.flash.get('p' + p.id) || 0) > t;
       r.shadow(x, y, 12);
       const rec = isMe ? this.recoil * 3 : 0;
-      const look = CHARS[info.char] || CHARS[0];
-      drawables.push({ y, draw: c => r.drawChar(c, { x: x - Math.cos(a) * rec, y: y - Math.sin(a) * rec, a, look, shirt: info.color, hair: look.hair ? HAIR[p.id % HAIR.length] : null, phase: ph, gun: GUNS[wid], down: p.state === 1, flash, t, id: p.id }) });
+      const look = info.look || CHARS[info.char] || CHARS[0];
+      const gun = info.look || p.busy ? null : GUNS[wid];   // Dr. Block is unarmed, and working a console takes both hands
+      drawables.push({ y, draw: c => r.drawChar(c, { x: x - Math.cos(a) * rec, y: y - Math.sin(a) * rec, a, look, shirt: info.color, hair: look.hair ? HAIR[p.id % HAIR.length] : null, phase: ph, gun, down: p.state === 1, flash, t, id: p.id }) });
       lights.push({ x, y: y - 10, r: isMe ? 380 : 300, i: isMe ? 0.95 : 0.8 });
     }
     // enemies
     for (const e of v.enemies) {
+      if (e.type === 'nest') {
+        r.shadow(e.x, e.y, 20);
+        const fl = (this.flash.get(e.id) || 0) > t;
+        drawables.push({ y: e.y, draw: c => r.drawNest(c, e.x, e.y, e.hp, t, e.id, fl) });
+        lights.push({ x: e.x, y: e.y - 20, r: 120, i: 0.6 });
+        continue;
+      }
       const L = e.elite ? eliteLook(e.type) : LOOKS[e.type];
       const ph = this.walk(e.id, e.x, e.y, e.type === 'sprinter' || e.type === 'splitling' ? 0.3 : 0.18);
       if (!L.ghost) r.shadow(e.x, e.y, 10 * L.s * (L.fat ? 1.3 : 1));
@@ -888,6 +1058,7 @@ export class ClientGame {
     }
     r.drawScene(drawables);
     this.drawParticles(ctx);
+    if (this.fogX !== Infinity) r.drawFog(ctx, this.fogX, t);
 
     // fire particles light up the scene
     let fl = 0;
@@ -913,12 +1084,23 @@ export class ClientGame {
   }
 
   drawOverlays(ctx, v) {
+    const r = this.r;
     ctx.textAlign = 'center';
+    this.drawPlacement(ctx);
     if (this.aimMode === 'keys' && this.myState === 0) {
       // facing indicator around the player and a bracket on the aim-assist target
       const a = this.me.a, cx = this.me.x, cy = this.me.y - 8;
       const px = cx + Math.cos(a) * 30, py = cy + Math.sin(a) * 30;
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      const locked = this.fireKey || this.lockKey;
+      if (locked) {
+        // aim locked: show the firing line so it is clear where the shots go while strafing
+        ctx.setLineDash([7, 8]);
+        ctx.strokeStyle = this.assist ? 'rgba(255,110,90,0.55)' : 'rgba(255,225,150,0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(cx + Math.cos(a) * 280, cy + Math.sin(a) * 280); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.fillStyle = locked ? '#ffd36a' : 'rgba(255,255,255,0.75)';
       ctx.beginPath();
       ctx.moveTo(px + Math.cos(a) * 7, py + Math.sin(a) * 7);
       ctx.lineTo(px + Math.cos(a + 2.4) * 6, py + Math.sin(a + 2.4) * 6);
@@ -961,7 +1143,14 @@ export class ClientGame {
       const isMe = p.id === this.myId;
       const x = isMe && p.state === 0 ? this.me.x : p.x;
       const y = isMe && p.state === 0 ? this.me.y : p.y;
-      const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+      const info = this.who(p.id);
+      if (p.state === 0 && p.carry) r.drawItem(ctx, 3, x, y - 38, this.time, p.id);
+      if (!isMe && p.state === 0 && p.busy) {
+        ctx.font = '800 9px Rubik, sans-serif';
+        ctx.fillStyle = '#5ff0ff';
+        ctx.fillText('WORKING: COVER ME', x, y - 54);
+      }
+      if (isMe && p.state === 0 && this.priv.uk) this.drawUsePrompt(ctx, x, y);
       if (isMe && this.switchT > 0 && p.state === 0) {
         // weapon name pops up over your head when you switch
         const w = this.weapons[this.weapon];
@@ -1004,6 +1193,18 @@ export class ClientGame {
         }
       }
     }
+    // objective labels in the world
+    ctx.font = '800 9px Rubik, sans-serif';
+    for (const [kind, x, y, rad, pct, stalled] of v.sites) {
+      const info = SITE_INFO[kind];
+      if (!info) continue;
+      const top = rad ? y - rad * 0.8 - 8 : y - 44;
+      const label = kind === 'gen' ? `${info.label}: BRING FUEL` : stalled ? 'INTERRUPTED' : `${info.label} ${pct}%`;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillText(label, x + 0.7, top + 0.7);
+      ctx.fillStyle = stalled ? '#ff6050' : info.color;
+      ctx.fillText(label, x, top);
+    }
     // upgrade crate labels
     ctx.font = '700 8px Rubik, sans-serif';
     for (const it of v.items) {
@@ -1028,8 +1229,54 @@ export class ClientGame {
     ctx.globalAlpha = 1;
   }
 
+  // ghost tile where a barricade or sentry would land: green if it fits, red if not
+  drawPlacement(ctx) {
+    const w = this.weapons[this.weapon];
+    if (this.myState !== 0 || w.kind !== 'place' || w.id === 'mine' || !this.priv.am[this.weapon]) return;
+    const a = this.me.a;
+    const tx = Math.floor((this.me.x + Math.cos(a) * 34) / T), ty = Math.floor((this.me.y + Math.sin(a) * 34) / T);
+    const inside = tx === Math.floor(this.me.x / T) && ty === Math.floor(this.me.y / T);
+    const bad = this.isSolid(tx, ty) || inside || this.map.rows[ty]?.[tx] === 'S';
+    ctx.fillStyle = bad ? 'rgba(232,66,63,0.22)' : 'rgba(127,255,143,0.2)';
+    ctx.strokeStyle = bad ? 'rgba(232,66,63,0.8)' : 'rgba(127,255,143,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(tx * T + 1, ty * T + 1, T - 2, T - 2);
+    ctx.strokeRect(tx * T + 1, ty * T + 1, T - 2, T - 2);
+  }
+
+  drawUsePrompt(ctx, x, y) {
+    const pct = this.priv.up2 || 0, label = `[F] ${USE_TEXT[this.priv.uk] || ''}`;
+    const top = y - 66;
+    ctx.font = '800 10px Rubik, sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillText(label, x + 0.8, top + 0.8);
+    ctx.fillStyle = '#ffd36a';
+    ctx.fillText(label, x, top);
+    if (pct > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(x - 22, top + 3, 44, 5);
+      ctx.fillStyle = '#ffd36a';
+      ctx.fillRect(x - 21, top + 4, 42 * pct / 100, 3);
+    }
+  }
+
   // --------------------------------------------------------------- HUD --
   objectiveText(ob) {
+    if (ob[0] === 'run') {
+      switch (ob[3]) {
+        case 'move': return ob[1] === 1 ? 'Get ready...' : 'The way is open: move up!';
+        case 'clear': return 'Clear the zone to open the door';
+        case 'nests': return `Destroy the nests: ${ob[4]} left`;
+        case 'hack': return ob[5] > 1 ? `Hack the terminals: ${ob[4]} / ${ob[5]}` : `Hack the terminal: ${ob[6]}%`;
+        case 'fuel': return `Fuel the generator: ${ob[4]} / ${ob[5]}`;
+        case 'hold': return `Hold the circle: ${ob[4]}%`;
+        case 'charge': return `Guard the charge: ${ob[4]}s · ${ob[5]}% health`;
+        case 'fix': return ob[5] ? 'Dr. Block is under attack!' : `Dr. Block is fixing the door: ${ob[4]}%`;
+        case 'boss': return 'Kill the boss to open the way';
+        case 'extract': return `Everyone to the extraction point (${ob[4]}s)`;
+      }
+      return '';
+    }
     switch (ob[0]) {
       case 'waves': return ob[1] ? `Objective: survive wave ${ob[1]} of ${ob[2]}` : `Objective: survive ${ob[2]} waves`;
       case 'defend': return `Generator ${ob[1]}%  ·  wave ${ob[3]} of ${ob[2]}`;
@@ -1076,11 +1323,13 @@ export class ClientGame {
     const lw = 240 * u;
     const panH = (74 + (ob ? 20 : 0) + muts.length * 16) * u;
     panel(pad, pad, lw, panH);
-    text(s.wv ? `WAVE ${s.wv}` : 'GET READY', pad + 12 * u, pad + 32 * u, 26 * u, '#f2b33a', 'left', 400, 'Bungee');
-    text(s.ws ? `${s.left} undead remaining` : `Next wave in ${Math.ceil(s.wt)}s`, pad + 12 * u, pad + 52 * u, 13 * u, '#efe6d8', 'left', 600);
+    const inRun = ob && ob[0] === 'run';
+    text(inRun ? `ZONE ${ob[1]}/${ob[2]}` : s.wv ? `WAVE ${s.wv}` : 'GET READY', pad + 12 * u, pad + 32 * u, 26 * u, '#f2b33a', 'left', 400, 'Bungee');
+    const waitText = inRun ? (ob[1] === 1 ? `Starting in ${Math.ceil(s.wt)}s` : `Zone wakes up in ${Math.ceil(s.wt)}s, or when you go in`) : `Next wave in ${Math.ceil(s.wt)}s`;
+    text(s.ws ? `${s.left} undead ${inRun ? 'around' : 'remaining'}` : waitText, pad + 12 * u, pad + 52 * u, (inRun && !s.ws ? 11 : 13) * u, '#efe6d8', 'left', 600);
     text(`TEAM SCORE ${s.sc.toLocaleString()}`, pad + 12 * u, pad + 67 * u, 11 * u, '#9c917f', 'left', 600);
-    const tag = this.mission ? `MISSION ${this.mission.idx + 1}` : this.mode.toUpperCase();
-    text(`${tag} · ${(this.diff || '').toUpperCase()}`, pad + lw - 12 * u, pad + 22 * u, 9 * u, '#6b6255', 'right', 800);
+    const tag = this.mission ? `#${this.mission.num}` : this.mode.toUpperCase();
+    text(`${tag} · ${(this.diff || '').toUpperCase()}${this.ffOn ? ' · FF' : ''}`, pad + lw - 12 * u, pad + 67 * u, 9 * u, '#6b6255', 'right', 800);
     let ly = pad + 67 * u;
     if (ob) {
       ly += 20 * u;
@@ -1096,7 +1345,7 @@ export class ClientGame {
     // --- team list
     let ty = pad + panH + 10 * u;
     for (const p of v.players) {
-      const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+      const info = this.who(p.id);
       panel(pad, ty, lw, 26 * u);
       ctx.fillStyle = info.color;
       ctx.fillRect(pad + 6 * u, ty + 6 * u, 14 * u, 14 * u);
@@ -1300,15 +1549,24 @@ export class ClientGame {
       ctx.drawImage(mm, mx0, my0, mw, mh);
       ctx.imageSmoothingEnabled = true;
       const k = ms * mm.width / (this.map.w * T);
+      if (this.fogX !== Infinity) {
+        ctx.fillStyle = '#0a0908';
+        ctx.fillRect(mx0 + this.fogX * k, my0, mw - this.fogX * k, mh);
+      }
+      for (const st of v.sites) {
+        if ((this.time * 3 | 0) % 2) continue;
+        ctx.fillStyle = (SITE_INFO[st[0]] || { color: '#fff' }).color;
+        ctx.fillRect(mx0 + st[1] * k - 3, my0 + st[2] * k - 3, 6, 6);
+      }
       for (const e of v.enemies) {
         const big = e.type === 'colossus' || e.type === 'juggernaut';
         ctx.fillStyle = e.elite ? '#ffc040' : '#ff4a3a';
         ctx.fillRect(mx0 + e.x * k - 1, my0 + e.y * k - 1, big ? 5 : 2.5, big ? 5 : 2.5);
       }
       for (const it of v.items) {
-        if (it[1] === 3 && (this.time * 3 | 0) % 2) continue;
+        if ((it[1] === 3 || it[1] === 5) && (this.time * 3 | 0) % 2) continue;
         const big = it[1] >= 2 ? 4.5 : 2.5;
-        ctx.fillStyle = it[1] === 3 ? '#ff7a40' : it[1] === 2 ? '#ffb020' : '#e8d060';
+        ctx.fillStyle = it[1] === 3 || it[1] === 5 ? '#ff7a40' : it[1] === 2 ? '#ffb020' : '#e8d060';
         ctx.fillRect(mx0 + it[2] * k - big / 2, my0 + it[3] * k - big / 2, big, big);
       }
       for (const st of v.structs) {
@@ -1320,7 +1578,7 @@ export class ClientGame {
       }
       for (const p of v.players) {
         if (p.state === 2) continue;
-        const info = this.roster.get(p.id) || { color: '#fff' };
+        const info = this.who(p.id);
         const ppx = p.id === this.myId ? this.me.x : p.x, ppy = p.id === this.myId ? this.me.y : p.y;
         ctx.fillStyle = '#000';
         ctx.fillRect(mx0 + ppx * k - 3, my0 + ppy * k - 3, 6, 6);
@@ -1332,8 +1590,16 @@ export class ClientGame {
 
     // --- pointers to off-screen objectives and downed teammates
     const marks = [];
-    for (const it of v.items) if (it[1] === 3) marks.push([it[2], it[3], '#ff7a40', 'FUEL']);
-    for (const st of v.structs) if (st[1] === 3) marks.push([st[2], st[3], '#ffd030', 'GEN']);
+    for (const it of v.items) if (it[1] === 3 || it[1] === 5) marks.push([it[2], it[3], '#ff7a40', 'FUEL']);
+    for (const st of v.structs) if (st[1] === 3) marks.push([st[2], st[3], '#ffd030', this.map.zones ? 'CHARGE' : 'GEN']);
+    for (const st of v.sites) if (SITE_INFO[st[0]]) marks.push([st[1], st[2], SITE_INFO[st[0]].color, SITE_INFO[st[0]].label]);
+    for (const e of v.enemies) if (e.type === 'nest') marks.push([e.x, e.y, '#ff5a8a', 'NEST']);
+    const vipView = this.vip && v.players.find(p => p.id === this.vip.id);
+    if (vipView && vipView.state === 0) marks.push([vipView.x, vipView.y, '#f2efe6', 'DR. BLOCK']);
+    if (s.ws === 0 && inRun && ob[1] > 1) {
+      const z = this.map.zones[ob[1] - 1];
+      marks.push([(z.x0 + 1) * T, (z.entry[1] + 0.5) * T, '#8af0a0', 'DOOR']);
+    }
     for (const p of v.players) if (p.state === 1 && p.id !== this.myId) marks.push([p.x, p.y, '#ff5040', 'REVIVE']);
     const m0 = 34 * u;
     for (const [x, y, color, label] of marks) {
@@ -1355,7 +1621,8 @@ export class ClientGame {
     }
 
     // --- announcements
-    let ay = H * 0.24;
+    // kept in the top third, clear of the player and the prompts over their head
+    let ay = H * 0.15;
     for (const a of this.announces) {
       const f = a.life / a.max;
       const alpha = Math.min(1, (1 - f) * 8, f * 4);
@@ -1365,7 +1632,16 @@ export class ClientGame {
       text(a.title, W / 2, ay, (a.small ? 22 : 46) * u * pop, col, 'center', 400, 'Bungee');
       if (a.sub) text(a.sub, W / 2, ay + 28 * u, 16 * u, '#efe6d8', 'center', 600);
       ctx.globalAlpha = 1;
-      ay += 80 * u;
+      ay += (a.sub ? 66 : 44) * u;
+    }
+
+    // --- walled in: say how to get out
+    if (me && me.state === 0 && this.priv.bx) {
+      const pulse = 0.75 + Math.sin(this.time * 4) * 0.25;
+      ctx.globalAlpha = pulse;
+      text('YOU ARE WALLED IN', W / 2, H * 0.72, 18 * u, '#ffb040', 'center', 400, 'Bungee');
+      ctx.globalAlpha = 1;
+      text('The undead break through faster the longer you sit here. Hold [F] next to a wall to take it down.', W / 2, H * 0.72 + 20 * u, 13 * u, '#efe6d8', 'center', 600);
     }
 
     // --- state overlays
@@ -1383,7 +1659,7 @@ export class ClientGame {
 
     // --- scoreboard
     if (this.showScores) {
-      const rows = [...v.players].sort((a, b) => b.score - a.score);
+      const rows = v.players.filter(p => !this.vip || p.id !== this.vip.id).sort((a, b) => b.score - a.score);
       const bw = 460 * u, bh = (70 + rows.length * 30) * u;
       const bx = W / 2 - bw / 2, by = H / 2 - bh / 2;
       panel(bx, by, bw, bh);
@@ -1391,7 +1667,7 @@ export class ClientGame {
       text('KILLS', bx + bw - 140 * u, by + 30 * u, 11 * u, '#9c917f', 'right', 800);
       text('SCORE', bx + bw - 18 * u, by + 30 * u, 11 * u, '#9c917f', 'right', 800);
       rows.forEach((p, i) => {
-        const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+        const info = this.who(p.id);
         const yy = by + (62 + i * 30) * u;
         ctx.fillStyle = info.color;
         ctx.fillRect(bx + 18 * u, yy - 11 * u, 12 * u, 12 * u);
@@ -1402,11 +1678,11 @@ export class ClientGame {
     }
 
     // --- pause screen
-    if (this.paused) {
+    if (this.paused && !this.menuOpen) {
       ctx.fillStyle = 'rgba(6,5,4,0.6)';
       ctx.fillRect(0, 0, W, H);
       text('PAUSED', W / 2, H * 0.42, 64 * u, '#f2b33a', 'center', 400, 'Bungee');
-      text(this.isHost ? 'Press Esc to resume' : 'The host paused the game. Waiting for them to resume...', W / 2, H * 0.42 + 40 * u, 18 * u, '#efe6d8', 'center', 600);
+      text('The host paused the game. Waiting for them to resume...', W / 2, H * 0.42 + 40 * u, 18 * u, '#efe6d8', 'center', 600);
       text('Chat (Enter) and perk picks still work', W / 2, H * 0.42 + 66 * u, 13 * u, '#9c917f', 'center', 600);
     }
 

@@ -6,7 +6,7 @@
 import { Renderer, T, CHARS, LOOKS, GUNS } from './render.js';
 import { ClientGame } from './game.js';
 import { Host } from './host.js';
-import { mapList, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS } from './sim.js';
+import { mapList, getMap, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS, CHAPTERS, FRIENDLY_FIRE } from './sim.js';
 import * as A from './audio.js';
 
 const $ = id => document.getElementById(id);
@@ -50,6 +50,7 @@ const GOAL_TEXT = {
   collect: g => `Find ${g.n} fuel cans`,
   holdout: g => `Hold out for ${g.secs / 60} minutes`,
 };
+const missionGoal = ms => (ms.zones ? `${ms.zones.length} zones to fight through${ms.vip ? ' · escort Dr. Block' : ''}` : GOAL_TEXT[ms.goal.type](ms.goal));
 
 // local progress: missions cleared (unlocks the next) and best waves in the endless modes
 function loadNum(key) {
@@ -58,7 +59,18 @@ function loadNum(key) {
 function saveNum(key, v) {
   try { localStorage.setItem(key, String(v)); } catch (e) { /* ignore */ }
 }
-const missionsCleared = () => Math.min(MISSIONS.length, loadNum('cs_missions'));
+// each chapter unlocks on its own: Breakthrough doesn't wait for the Siege campaign
+const chapterOf = i => MISSIONS[i].chapter || 1;
+const chapterMissions = ch => MISSIONS.map((m, i) => i).filter(i => chapterOf(i) === ch);
+const chapterKey = ch => (ch === 1 ? 'cs_missions' : `cs_missions${ch}`);
+const missionsCleared = ch => Math.min(chapterMissions(ch).length, loadNum(chapterKey(ch)));
+function firstOpenMission() {
+  for (const ch of Object.keys(CHAPTERS).map(Number)) {
+    const ids = chapterMissions(ch), done = missionsCleared(ch);
+    if (done < ids.length) return ids[done];
+  }
+  return 0;
+}
 const bestKey = (mode, diff) => `cs_best_${mode}_${diff}`;
 let roster = new Map();
 let pendingJoin = new URLSearchParams(location.search).get('room');
@@ -285,7 +297,7 @@ function buildSettings(m, interactive) {
     if (interactive) b.onclick = () => {
       const cfg = { t: 'cfg', mode: id };
       // jump to the first mission not cleared yet
-      if (id === 'missions' && m.mode !== 'missions') cfg.mission = Math.min(missionsCleared(), MISSIONS.length - 1);
+      if (id === 'missions' && m.mode !== 'missions') cfg.mission = firstOpenMission();
       send(cfg);
       A.initAudio(); A.play('click');
     };
@@ -297,25 +309,35 @@ function buildSettings(m, interactive) {
   $('mapBox').classList.toggle('hidden', isMissions);
   $('foeBox').classList.toggle('hidden', isMissions);
   if (isMissions) {
-    const cleared = missionsCleared();
-    $('missionProg').textContent = `${cleared} / ${MISSIONS.length} cleared`;
+    $('missionProg').textContent = '';
     const list = $('missionPick');
     list.innerHTML = '';
     list.classList.toggle('locked', !interactive);
-    MISSIONS.forEach((ms, i) => {
-      const locked = i > cleared;
-      const d = document.createElement('div');
-      d.className = 'mission' + (i === m.mission ? ' sel' : '') + (locked ? ' locked' : '') + (i < cleared ? ' done' : '');
-      const num = document.createElement('span'); num.className = 'num'; num.textContent = i < cleared ? '✓' : String(i + 1);
-      const info = document.createElement('div');
-      const b = document.createElement('b'); b.textContent = locked ? `${ms.name} (locked)` : ms.name;
-      const sm = document.createElement('small');
-      sm.textContent = `${(maps.find(x => x.id === ms.map) || {}).name} · ${GOAL_TEXT[ms.goal.type](ms.goal)}`;
-      info.append(b, sm);
-      d.append(num, info);
-      if (interactive && !locked) d.onclick = () => { send({ t: 'cfg', mission: i }); A.initAudio(); A.play('click'); };
-      list.appendChild(d);
-    });
+    for (const ch of Object.keys(CHAPTERS).map(Number)) {
+      const ids = chapterMissions(ch), cleared = missionsCleared(ch);
+      const head = document.createElement('div');
+      head.className = 'chapter';
+      head.textContent = CHAPTERS[ch];
+      const prog = document.createElement('span');
+      prog.textContent = `${cleared} / ${ids.length} cleared`;
+      head.appendChild(prog);
+      list.appendChild(head);
+      ids.forEach((i, k) => {
+        const ms = MISSIONS[i];
+        const locked = k > cleared;
+        const d = document.createElement('div');
+        d.className = 'mission' + (i === m.mission ? ' sel' : '') + (locked ? ' locked' : '') + (k < cleared ? ' done' : '');
+        const num = document.createElement('span'); num.className = 'num'; num.textContent = k < cleared ? '✓' : String(k + 1);
+        const info = document.createElement('div');
+        const b = document.createElement('b'); b.textContent = locked ? `${ms.name} (locked)` : ms.name;
+        const sm = document.createElement('small');
+        sm.textContent = `${getMap(ms.map).name} · ${missionGoal(ms)}`;
+        info.append(b, sm);
+        d.append(num, info);
+        if (interactive && !locked) d.onclick = () => { send({ t: 'cfg', mission: i }); A.initAudio(); A.play('click'); };
+        list.appendChild(d);
+      });
+    }
     const sel = MISSIONS[m.mission];
     $('missionDesc').textContent = sel ? sel.desc : '';
   }
@@ -333,6 +355,18 @@ function buildSettings(m, interactive) {
     seg.appendChild(b);
   }
   $('diffDesc').textContent = DIFF_DESC[m.diff] || '';
+  const ffSeg = $('ffPick');
+  ffSeg.innerHTML = '';
+  ffSeg.classList.toggle('locked', !interactive);
+  for (const [id, f] of Object.entries(FRIENDLY_FIRE)) {
+    const b = document.createElement('button');
+    b.textContent = f.name;
+    b.className = id === m.ff ? 'sel' : '';
+    b.disabled = !interactive && id !== m.ff;
+    if (interactive) b.onclick = () => { send({ t: 'cfg', ff: id }); A.initAudio(); A.play('click'); };
+    ffSeg.appendChild(b);
+  }
+  $('ffDesc').textContent = (FRIENDLY_FIRE[m.ff] || FRIENDLY_FIRE.off).desc;
   const foes = $('foePick');
   foes.innerHTML = '';
   foes.classList.toggle('locked', !interactive);
@@ -441,6 +475,7 @@ function toast(msg) {
 // ------------------------------------------------------------------ game --
 function startGame(m) {
   A.initAudio();
+  closeMenu(false);
   game = new ClientGame(renderer, net, m, roster, { openChat, setHurt });
   game.isHost = !!room && room.host === myId;
   show(null);
@@ -456,13 +491,14 @@ function setHurt(v) {
 function endGame() {
   setHurt(0);
   if (game) game.clearInput();
+  closeMenu(false);
   game = null;
   closeChat();
   document.body.classList.remove('playing');
 }
 
 function onOver(m) {
-  A.play('over', 1);
+  if (!m.stopped) A.play('over', 1);
   const g = game;
   setTimeout(() => {
     if (game && game !== g) return; // a new round already started
@@ -471,40 +507,43 @@ function onOver(m) {
     const diff = ` on ${DIFFICULTY[diffId].name}`;
     const ms = m.mode === 'missions' ? MISSIONS[m.mission] : null;
     const title = $('overTitle');
-    title.textContent = m.won ? 'MISSION COMPLETE' : ms && m.lost ? 'MISSION FAILED' : 'OVERRUN';
-    title.className = m.won ? 'victory' : 'danger';
+    title.textContent = m.stopped ? 'ROUND ENDED' : m.won ? 'MISSION COMPLETE' : ms && m.lost ? 'MISSION FAILED' : 'OVERRUN';
+    title.className = m.won ? 'victory' : m.stopped ? 'pmTitle' : 'danger';
     const stats = `${m.kills} undead destroyed · ${m.score.toLocaleString()} points`;
     if (ms) {
       let extra = '';
+      const ch = chapterOf(m.mission), ids = chapterMissions(ch), k = ids.indexOf(m.mission);
       if (m.won) {
-        const before = missionsCleared();
-        if (m.mission + 1 > before) saveNum('cs_missions', m.mission + 1);
-        const nxt = MISSIONS[m.mission + 1];
-        extra = nxt && m.mission + 1 > before ? ` · Unlocked: ${nxt.name}` : !nxt ? ' · Campaign complete!' : '';
+        const before = missionsCleared(ch);
+        if (k + 1 > before) saveNum(chapterKey(ch), k + 1);
+        const nxt = MISSIONS[ids[k + 1]];
+        extra = nxt && k + 1 > before ? ` · Unlocked: ${nxt.name}` : !nxt ? ' · Campaign complete!' : '';
       }
-      $('overSummary').textContent = `Mission ${m.mission + 1}: ${ms.name}${diff} · ${m.won ? 'cleared!' : m.lost || `overrun on wave ${m.wave}`} · ${stats}${extra}`;
+      const how = m.won ? 'cleared!' : m.stopped ? 'stopped by the host' : m.lost || (ms.zones ? `overrun in zone ${m.wave}` : `overrun on wave ${m.wave}`);
+      $('overSummary').textContent = `${CHAPTERS[ch]} ${k + 1}: ${ms.name}${diff} · ${how} · ${stats}${extra}`;
     } else {
       const key = bestKey(m.mode || 'classic', diffId);
       const best = loadNum(key);
       if (m.wave > best) saveNum(key, m.wave);
       const rec = m.wave > best && best ? ' · New personal best!' : best ? ` · Best: wave ${best}` : '';
-      $('overSummary').textContent = `Your team survived until wave ${m.wave}${diff} · ${stats}${rec}`;
+      $('overSummary').textContent = `Your team ${m.stopped ? 'stopped at' : 'survived until'} wave ${m.wave}${diff} · ${stats}${rec}`;
     }
     const tbl = $('overTable');
-    tbl.innerHTML = '<tr><th>Survivor</th><th>Kills</th><th>Best chain</th><th>Revives</th><th>Score</th></tr>';
+    const showFf = m.ff && m.ff !== 'off';
+    tbl.innerHTML = `<tr><th>Survivor</th><th>Kills</th><th>Best chain</th><th>Revives</th>${showFf ? '<th>Team damage</th>' : ''}<th>Score</th></tr>`;
     for (const s of [...m.stats].sort((a, b) => b.score - a.score)) {
       const tr = document.createElement('tr');
       const td0 = document.createElement('td');
       const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = s.color;
       td0.append(sw, document.createTextNode(s.name));
       tr.appendChild(td0);
-      for (const v of [s.kills, s.best, s.revives, s.score.toLocaleString()]) {
+      for (const v of [s.kills, s.best, s.revives, ...(showFf ? [s.ff || 0] : []), s.score.toLocaleString()]) {
         const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
       }
       tbl.appendChild(tr);
     }
     show('over');
-  }, 1600);
+  }, m.stopped ? 0 : 1600);
 }
 
 $('overBtn').onclick = () => { if (room && session) show('lobby'); else backToMenu(''); };
@@ -532,6 +571,52 @@ chatIn.addEventListener('keydown', e => {
   } else if (e.key === 'Escape') closeChat();
 });
 
+// ------------------------------------------------------------- game menu --
+// Esc opens this for everyone. The host's menu also pauses the round and adds the controls to restart or
+// end it. Other players keep playing behind it unless the host has paused, so it is only a way out.
+function pmConfirm(btn, label, act) {
+  btn.dataset.label = label;
+  btn.onclick = () => {
+    if (btn.classList.contains('confirm')) { pmReset(); act(); return; }
+    pmReset();
+    btn.classList.add('confirm');
+    btn.textContent = 'Click again to confirm';
+  };
+}
+function pmReset() {
+  for (const b of [$('pmRestart'), $('pmEnd'), $('pmLeave')]) {
+    b.classList.remove('confirm');
+    if (b.dataset.label) b.textContent = b.dataset.label;
+  }
+}
+const isRoomHost = () => !!room && room.host === myId;
+function openMenu() {
+  if (!game) return;
+  const host = isRoomHost();
+  game.menuOpen = true;
+  game.clearInput();
+  if (host) send({ t: 'pause', on: true });
+  $('pmTitle').textContent = host ? 'PAUSED' : 'MENU';
+  $('pmNote').textContent = host ? 'The game is paused for everyone.' : 'The game keeps running while this is open. Only the host can pause.';
+  $('pmRestart').classList.toggle('hidden', !host);
+  $('pmEnd').classList.toggle('hidden', !host);
+  pmConfirm($('pmLeave'), host ? 'Close room' : 'Leave game', () => { send({ t: 'leave' }); backToMenu(''); });
+  pmReset();
+  $('pmMute').textContent = `Sound: ${A.isMuted() ? 'off' : 'on'}`;
+  $('pauseMenu').classList.remove('hidden');
+}
+function closeMenu(resume = true) {
+  $('pauseMenu').classList.add('hidden');
+  if (!game || !game.menuOpen) return;
+  game.menuOpen = false;
+  if (resume && isRoomHost()) send({ t: 'pause', on: false });
+  canvas.focus();
+}
+$('pmResume').onclick = () => { A.play('click'); closeMenu(); };
+pmConfirm($('pmRestart'), 'Restart round', () => { closeMenu(false); send({ t: 'restart' }); });
+pmConfirm($('pmEnd'), 'End round', () => { closeMenu(false); send({ t: 'end' }); });
+$('pmMute').onclick = () => { $('pmMute').textContent = `Sound: ${A.toggleMute() ? 'off' : 'on'}`; };
+
 // ----------------------------------------------------------------- input --
 window.addEventListener('keydown', e => {
   if (!game || game.chatting) return;
@@ -539,17 +624,19 @@ window.addEventListener('keydown', e => {
   if (['Tab', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
   if (e.key === 'Escape') {
     if (e.repeat) return;
-    if (room && room.host === myId) send({ t: 'pause' });
-    else game.announce('ONLY THE HOST CAN PAUSE', '', 1.5, true);
+    if (game.menuOpen) closeMenu();
+    else openMenu();
     return;
   }
+  if (game.menuOpen) return;
   game.keyDown(e);
 });
 window.addEventListener('keyup', e => { if (game) game.keyUp(e); });
 window.addEventListener('blur', () => { if (game) game.clearInput(); });
 canvas.addEventListener('mousemove', e => {
   if (!game) return;
-  if (Math.abs(e.clientX - game.mouse.x) + Math.abs(e.clientY - game.mouse.y) > 3) game.aimMode = 'mouse';
+  // a bumped mouse shouldn't break a held keyboard aim
+  if (!game.fireKey && !game.lockKey && Math.abs(e.clientX - game.mouse.x) + Math.abs(e.clientY - game.mouse.y) > 3) game.aimMode = 'mouse';
   game.mouse.x = e.clientX;
   game.mouse.y = e.clientY;
 });
@@ -559,9 +646,14 @@ canvas.addEventListener('mousedown', e => {
   if (game.chatting) closeChat();
   if (e.button === 0 && game.clickUI(e.clientX, e.clientY)) { e.preventDefault(); return; }
   if (e.button === 0) { game.mouse.down = true; game.aimMode = 'mouse'; }
+  if (e.button === 2) game.useMouse = true;
   e.preventDefault();
 });
-window.addEventListener('mouseup', e => { if (game && e.button === 0) game.mouse.down = false; });
+window.addEventListener('mouseup', e => {
+  if (!game) return;
+  if (e.button === 0) game.mouse.down = false;
+  if (e.button === 2) game.useMouse = false;
+});
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { if (game) { game.cycle(e.deltaY > 0 ? 1 : -1); e.preventDefault(); } }, { passive: false });
 window.addEventListener('resize', () => renderer.resize());
@@ -598,14 +690,20 @@ let lastT = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
-  if (game) {
-    if (renderer.map !== game.map) renderer.setMap(game.map);
-    game.update(dt);
-    game.render();
-  } else {
-    drawMenuBg(dt);
-  }
+  // Schedule the next frame first: one bad frame must never freeze the game for good.
   requestAnimationFrame(frame);
+  try {
+    if (game) {
+      if (renderer.map !== game.map) renderer.setMap(game.map);
+      game.update(dt);
+      game.render();
+    } else {
+      drawMenuBg(dt);
+    }
+  } catch (e) {
+    console.error(e);
+    (window.__cs.errors ||= []).push(String(e.stack || e));
+  }
 }
 
 // handle for automated tests / debugging in the console

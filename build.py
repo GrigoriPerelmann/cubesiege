@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Bundle public/ into one self-contained file: cube-siege.html
+"""Bundle public/ into self-contained files: cube-siege.html and cube-siege-balance.html
 
-The result can be opened by double-click (file://), sent to friends or uploaded to any
+The results can be opened by double-click (file://), sent to friends or uploaded to any
 static web host. Each ES module is wrapped in its own function scope; imports/exports
 are rewritten to a small module table.
 """
@@ -10,7 +10,8 @@ import re
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PUB = os.path.join(ROOT, 'public')
-OUT = os.path.join(ROOT, 'cube-siege.html')
+# (page in public/, entry module, bundled file)
+PAGES = [('index.html', 'main', 'cube-siege.html'), ('balance.html', 'lab', 'cube-siege-balance.html')]
 
 IMPORT_RE = re.compile(r"^import\s+(.+?)\s+from\s+'\./([\w-]+)\.js';\s*$", re.M)
 EXPORT_DECL_RE = re.compile(r'^export\s+(?:async\s+)?(class|function|const|let)\s+(\w+)', re.M)
@@ -43,18 +44,25 @@ def transform(name, src):
     return f"// ---- {name}.js\n__mods[{name!r}] = (() => {{\n{src}\nreturn {{ {', '.join(exports)} }};\n}})();\n"
 
 
-def main():
-    html = open(os.path.join(PUB, 'index.html'), encoding='utf-8').read()
-    css = open(os.path.join(PUB, 'style.css'), encoding='utf-8').read()
+def bundle(page, entry, out):
+    html = open(os.path.join(PUB, page), encoding='utf-8').read()
     order = []
-    load_module('main', set(), order)
+    load_module(entry, set(), order)
     js = "'use strict';\nconst __mods = {};\n" + ''.join(transform(n, s) for n, s in order)
-    html = html.replace('<link rel="stylesheet" href="style.css">', '<style>\n' + css + '</style>')
-    html = html.replace('<script type="module" src="js/main.js"></script>',
+    if '<link rel="stylesheet" href="style.css">' in html:
+        css = open(os.path.join(PUB, 'style.css'), encoding='utf-8').read()
+        html = html.replace('<link rel="stylesheet" href="style.css">', '<style>\n' + css + '</style>')
+    html = html.replace(f'<script type="module" src="js/{entry}.js"></script>',
                         '<script>\n(() => {\n' + js.replace('</script', '<\\/script') + '})();\n</script>')
-    with open(OUT, 'w', encoding='utf-8') as f:
+    path = os.path.join(ROOT, out)
+    with open(path, 'w', encoding='utf-8') as f:
         f.write(html)
-    print(f'wrote {os.path.relpath(OUT, ROOT)} ({len(html) // 1024} KB, modules: {", ".join(n for n, _ in order)})')
+    print(f'wrote {out} ({len(html) // 1024} KB, modules: {", ".join(n for n, _ in order)})')
+
+
+def main():
+    for page in PAGES:
+        bundle(*page)
 
 
 if __name__ == '__main__':

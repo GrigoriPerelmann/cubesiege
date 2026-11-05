@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Balance Lab</title>
+<style>
+:root { --bg: #0e0d0c; --surface: #1a1815; --line: #3b352e; --ink: #efe6d8; --ink2: #b8ad98; --muted: #8f8573;
+  --heat: 242, 179, 58; --good: #49c46b; --warn: #e8b030; --bad: #e8423f; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 Rubik, system-ui, sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: .5px; }
+h2 { font-size: 16px; margin: 0 0 4px; }
+p { margin: 0 0 12px; color: var(--ink2); }
+section { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; margin-top: 16px; }
+.hero { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+.big { font-size: 56px; font-weight: 800; line-height: 1; }
+.big small { font-size: 18px; color: var(--muted); font-weight: 600; }
+.parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; flex: 1; min-width: 240px; }
+.part b { display: block; font-size: 20px; }
+.part span { color: var(--muted); font-size: 12px; line-height: 1.3; display: block; }
+.scroll { overflow-x: auto; }
+table { border-collapse: separate; border-spacing: 2px; width: 100%; font-variant-numeric: tabular-nums; }
+th { font-size: 12px; font-weight: 600; color: var(--muted); text-align: right; padding: 4px 6px; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+td { padding: 6px; text-align: right; white-space: nowrap; border-radius: 3px; }
+td.cell { min-width: 62px; cursor: default; }
+td.row { color: var(--ink2); }
+ul.issues { list-style: none; margin: 8px 0 0; padding: 0; }
+ul.issues li { padding: 3px 0; }
+.ok { color: var(--good); } .warn { color: var(--warn); } .fail { color: var(--bad); }
+.bars { display: grid; grid-template-columns: minmax(120px, max-content) 1fr 48px; gap: 4px 10px; align-items: center; }
+.track { position: relative; height: 12px; background: #24211c; border-radius: 3px; }
+.band { position: absolute; top: 0; bottom: 0; background: rgba(255, 255, 255, .07); }
+.fill { position: absolute; left: 0; top: 2px; bottom: 2px; background: rgb(var(--heat)); border-radius: 0 4px 4px 0; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+button, select { font: inherit; font-weight: 600; background: #2d2822; color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 7px 12px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0 12px; }
+progress { flex: 1; min-width: 120px; accent-color: rgb(var(--heat)); }
+.note { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+#tip { position: fixed; display: none; pointer-events: none; background: #000; border: 1px solid var(--line); border-radius: 4px; padding: 6px 9px; font-size: 12px; max-width: 280px; z-index: 5; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Balance Lab</h1>
+  <p>How fair the Cube Siege arsenal is, measured from the game's own code. Change numbers in <code>js/sim.js</code> and reload.</p>
+
+  <section>
+    <div class="hero">
+      <div class="big"><span id="score">–</span><small> / 100</small></div>
+      <div class="parts" id="parts"></div>
+    </div>
+    <ul class="issues" id="issues"></ul>
+  </section>
+
+  <section>
+    <h2>Weapon Power Index</h2>
+    <p>100 is a stock pistol. Weapons run left to right in unlock order, so each row should get steadily stronger towards the right.</p>
+    <div class="scroll"><table id="wpi"></table></div>
+    <p class="note">WPI = single-target DPS<sup>0.3</sup> × crowd DPS<sup>0.3</sup> × sustained DPS<sup>0.4</sup>. Sustained DPS covers a 60 s fight with one ammo crate every 20 s, falling back to the pistol when the gun runs dry. Hover a cell for the parts.</p>
+  </section>
+
+  <section>
+    <h2>What each upgrade is worth</h2>
+    <p>Power multiplier on its own weapon. The shaded band is the target, x1.25 to x1.75.</p>
+    <div class="bars" id="ups"></div>
+  </section>
+
+  <section>
+    <h2>Field test</h2>
+    <p>A bot plays real rounds of Classic (no bosses) with a single weapon. The table shows the average wave it reaches. It is noisy and bots aim better than they dodge, so look for large gaps and for weapons that break the left-to-right trend, not small differences.</p>
+    <div class="ctl">
+      <label>Runs per cell <select id="runs"><option>3</option><option selected>6</option><option>12</option><option>24</option></select></label>
+      <button id="fieldBtn">Run weapons</button>
+      <button id="perkBtn">Run perks</button>
+      <progress id="prog" value="0" max="1"></progress>
+      <span id="progText" class="note"></span>
+    </div>
+    <div class="scroll"><table id="field"></table></div>
+    <div class="scroll"><table id="perks"></table></div>
+  </section>
+</main>
+<div id="tip"></div>
+<script type="module" src="js/lab.js"></script>
+</body>
+</html>

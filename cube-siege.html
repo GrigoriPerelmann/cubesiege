@@ -163,6 +163,19 @@ button:disabled { opacity: .45; cursor: default; }
 .mission small { display: block; color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .missions.locked .mission { cursor: default; }
 #overTitle { font-size: clamp(30px, 6vw, 44px); }
+
+.chapter { grid-column: 1 / -1; font-family: 'Bungee', sans-serif; font-size: 13px; color: var(--muted); letter-spacing: 1px;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 8px; }
+.chapter:first-child { margin-top: 0; }
+.chapter span { font-family: 'Rubik', sans-serif; font-size: 11.5px; letter-spacing: 0; }
+
+#pauseMenu { background: rgba(6, 5, 4, 0.62); z-index: 5; }
+.pmTitle { color: var(--accent); text-shadow: 0 4px 0 #8a5a14; }
+.pmBtns { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+.pmBtns button.confirm { background: var(--accent2); border-color: #7a1c1a; }
+.keys { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12.5px; color: var(--muted); }
+.keys td { padding: 3px 0; vertical-align: top; }
+.keys td:first-child { color: var(--text); font-weight: 600; padding-right: 14px; white-space: nowrap; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
 </head>
@@ -175,7 +188,7 @@ button:disabled { opacity: .45; cursor: default; }
 <section id="menu" class="screen">
   <div class="panel wide">
     <h1 class="logo"><span>CUBE</span><span>SIEGE</span></h1>
-    <p class="tag">Co-op survival against endless waves of blocky undead.</p>
+    <p class="tag">Co-op survival against waves of blocky undead.</p>
     <div class="row">
       <label>Your name <input id="name" maxlength="16" autocomplete="off" spellcheck="false"></label>
     </div>
@@ -197,9 +210,9 @@ button:disabled { opacity: .45; cursor: default; }
           until the round is over.</p>
       </div>
     </div>
-    <p class="help"><b>Keyboard:</b> WASD / arrows move &middot; Space shoot where you face (auto-aim helps)<br>
+    <p class="help"><b>Keyboard:</b> WASD / arrows move &middot; hold Space to shoot: your aim locks so you can strafe &middot; Shift locks aim without shooting<br>
       <b>Mouse:</b> aim with the mouse &middot; click to shoot<br>
-      1-0 / Q E / wheel switch weapon &middot; Z X C pick perks &middot; Enter chat &middot; Tab scores &middot; M mute &middot; Esc pause (host)</p>
+      F or right-click use / take apart &middot; 1-0 / Q E / wheel switch weapon &middot; Z X C pick perks &middot; Enter chat &middot; Tab scores &middot; M mute &middot; Esc menu</p>
     <div id="status" class="status"></div>
   </div>
 </section>
@@ -247,6 +260,9 @@ button:disabled { opacity: .45; cursor: default; }
       <h4>Difficulty</h4>
       <div id="diffPick" class="seg"></div>
       <p id="diffDesc" class="muted small-text desc"></p>
+      <h4>Friendly fire</h4>
+      <div id="ffPick" class="seg"></div>
+      <p id="ffDesc" class="muted small-text desc"></p>
       <div id="foeBox">
         <h4>Undead types</h4>
         <div id="foePick" class="foes"></div>
@@ -270,6 +286,30 @@ button:disabled { opacity: .45; cursor: default; }
     <div class="row actions">
       <button id="overBtn" class="big">Back to lobby</button>
     </div>
+  </div>
+</section>
+
+<!-- in-game menu (Esc). For the host it also pauses the game for everyone. -->
+<section id="pauseMenu" class="screen hidden">
+  <div class="panel">
+    <h2 id="pmTitle" class="pmTitle">PAUSED</h2>
+    <p id="pmNote" class="tag"></p>
+    <div class="pmBtns">
+      <button id="pmResume" class="big">Resume</button>
+      <button id="pmRestart">Restart round</button>
+      <button id="pmEnd">End round</button>
+      <button id="pmMute">Sound: on</button>
+      <button id="pmLeave" class="ghost">Leave game</button>
+    </div>
+    <table class="keys">
+      <tr><td>Move</td><td>WASD / arrows</td></tr>
+      <tr><td>Shoot</td><td>Hold Space (aim stays locked, so you can strafe) or left mouse</td></tr>
+      <tr><td>Lock aim</td><td>Hold Shift</td></tr>
+      <tr><td>Use / take apart</td><td>Hold F or right mouse</td></tr>
+      <tr><td>Weapons</td><td>1-0, Q / E, mouse wheel</td></tr>
+      <tr><td>Perks</td><td>Z X C or click</td></tr>
+      <tr><td>Chat / scores / mute</td><td>Enter / Tab / M</td></tr>
+    </table>
   </div>
 </section>
 
@@ -328,7 +368,10 @@ const LOOKS = {
   wraith: { s: 1, skin: '#c8e0f0', shirt: '#6a8ab0', pants: '#4a6a90', eye: '#40e8ff', robe: true, ghost: true },
   juggernaut: { s: 2.1, skin: '#6f6a78', shirt: '#33333d', pants: '#22222a', eye: '#ff2a2a', zombie: true, big: true, glow: '#ff3a2a', spikes: '#c8c0b0' },
   splitling: { s: 0.62, skin: '#c48aa4', shirt: '#6a3050', pants: '#3a2030', eye: '#ffe040', zombie: true },
+  nest: { s: 1.5, skin: '#8a4a6a', shirt: '#5a2a4a', pants: '#3a1a30', eye: '#ffe040' },
 };
+// Dr. Block, the scientist you escort in Breakthrough missions
+const VIP_LOOK = { name: 'Dr. Block', s: 1, skin: '#e8c8a0', pants: '#3a3a44', eye: '#1b1b1b', hat: 'hardhat' };
 // bigger, gold-trimmed variant of a look for elite undead
 const eliteCache = {};
 function eliteLook(type) {
@@ -348,7 +391,7 @@ const CHARS = [
   { name: 'Viking', s: 1, skin: '#e8bc94', pants: '#5a3e26', eye: '#1b1b1b', hat: 'viking', beard: '#c07a30' },
 ];
 const BLOOD = { shambler: '#8a1010', sprinter: '#7a1414', brute: '#5a0d2a', warlock: '#d0601a', bloater: '#7fa020', colossus: '#6a0808',
-  leaper: '#7a1a10', spitter: '#8acc30', riot: '#6a1010', shaman: '#3a8a3a', splitter: '#a03070', wraith: '#9ad8ff', juggernaut: '#5a0808', splitling: '#a03070' };
+  leaper: '#7a1a10', spitter: '#8acc30', riot: '#6a1010', shaman: '#3a8a3a', splitter: '#a03070', wraith: '#9ad8ff', juggernaut: '#5a0808', splitling: '#a03070', nest: '#7a2a5a' };
 
 // ------------------------------------------------------------ renderer --
 class Renderer {
@@ -662,7 +705,7 @@ class Renderer {
     const g = c.getContext('2d');
     for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
       const ch = m.rows[y][x];
-      g.fillStyle = ch === '#' ? '#8a8378' : ch === 'B' ? '#6d5a3f' : ch === 'T' ? '#4e6b3c' : ch === 'S' ? '#5a3a1a' : '#26231f';
+      g.fillStyle = ch === '#' ? '#8a8378' : ch === 'B' ? '#6d5a3f' : ch === 'T' ? '#4e6b3c' : ch === 'S' ? '#5a3a1a' : ch === 'D' ? '#c04a30' : '#26231f';
       g.fillRect(x * s, y * s, s, s);
     }
     return c;
@@ -955,6 +998,10 @@ class Renderer {
     const R = (x, y, ww, hh, c) => { ctx.fillStyle = col(c); ctx.fillRect(x, y, ww, hh); };
     const cx = hx + w / 2;
     switch (hat) {
+      case 'hardhat':
+        box(hx - 1, top - 3, w + 2, 6, '#f2c230');
+        R(hx - 3, top + 2, w + 6, 2, '#d8a820');
+        break;
       case 'helmet':
         box(hx - 1, top - 3, w + 2, 7, '#4b5a35');
         R(hx - 2, top + 3, w + 4, 2, '#36412a');
@@ -1058,6 +1105,103 @@ class Renderer {
     ctx.fillRect(x - 19, y0 - h - 9, 38 * Math.max(0, hp) / 100, 4);
   }
 
+  // one tile row of a sealed blast door, built like the wall tiles around it
+  drawDoor(ctx, x, y, w, last, t) {
+    const h = 30;
+    if (last) {
+      ctx.fillStyle = '#3a3d42';
+      ctx.fillRect(x, y + T - h, w, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(x, y + T - 8, w, 8);
+      ctx.fillStyle = (t * 2) % 1 < 0.5 ? '#ff4030' : '#601810';
+      ctx.fillRect(x + w / 2 - 4, y + T - h + 7, 8, 4);
+    }
+    ctx.fillStyle = '#4a4e54';
+    ctx.fillRect(x, y - h, w, T);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y - h, w, T); ctx.clip();
+    ctx.strokeStyle = 'rgba(240,190,40,0.8)';
+    ctx.lineWidth = 7;
+    for (let k = -T; k < w + T; k += 20) { ctx.beginPath(); ctx.moveTo(x + k, y - h); ctx.lineTo(x + k + T, y - h + T); ctx.stroke(); }
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, y - h + 0.5, w - 1, T - 1);
+  }
+
+  // everything past the next door stays hidden until it opens
+  drawFog(ctx, x0, t) {
+    const v = this.view;
+    if (x0 >= v.x1) return;
+    const top = v.y0 - 80, hh = v.y1 - v.y0 + 160;
+    const edge = ctx.createLinearGradient(x0 - 26, 0, x0 + 26, 0);
+    edge.addColorStop(0, 'rgba(0,0,0,0)');
+    edge.addColorStop(1, this.theme.bg);
+    ctx.fillStyle = edge;
+    ctx.fillRect(x0 - 26, top, 52, hh);
+    ctx.fillStyle = this.theme.bg;
+    ctx.fillRect(x0 + 26, top, v.x1 - x0 + 40, hh);
+  }
+
+  // a console you work at with the interact key
+  drawTerminal(ctx, x, y, pct, t, stalled = false) {
+    const x0 = x - 12, y0 = y - 12, h = 20;
+    ctx.fillStyle = '#34383e';
+    ctx.fillRect(x0, y0 + 24 - h, 24, h);
+    ctx.fillStyle = '#50565e';
+    ctx.fillRect(x0, y0 - h, 24, 24);
+    const done = pct >= 100;
+    ctx.fillStyle = done ? '#123a1c' : '#0c2230';
+    ctx.fillRect(x0 + 3, y0 - h + 3, 18, 12);
+    ctx.fillStyle = done ? '#5fff6a' : stalled ? '#ff6050' : '#5ff0ff';
+    ctx.fillRect(x0 + 4, y0 - h + 4, 16 * Math.max(0.06, pct / 100), 3);
+    if (!done && (t * 3) % 1 < 0.6) ctx.fillRect(x0 + 4, y0 - h + 9, 6, 2);
+    ctx.fillStyle = '#ffb030';
+    ctx.fillRect(x0 + 4, y0 - h + 17, 4, 3);
+    ctx.fillStyle = '#e8423f';
+    ctx.fillRect(x0 + 11, y0 - h + 17, 4, 3);
+    ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, y0 - h + 0.5, 23, 24 + h - 1);
+  }
+
+  // floor marking of an area to stand in, with a progress arc
+  drawRing(ctx, x, y, r, pct, t, rgb) {
+    const pulse = 0.5 + Math.sin(t * 3) * 0.5;
+    ctx.fillStyle = `rgba(${rgb},${0.08 + pulse * 0.05})`;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.setLineDash([12, 9]);
+    ctx.lineDashOffset = -t * 18;
+    ctx.strokeStyle = `rgba(${rgb},0.65)`;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.8, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    if (pct > 0) {
+      ctx.strokeStyle = `rgba(${rgb},0.95)`;
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.8, 0, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * pct / 100); ctx.stroke();
+    }
+  }
+
+  // a pulsing sac rooted to the ground that keeps hatching undead
+  drawNest(ctx, x, y, hp, t, id, flash) {
+    const col = c => (flash ? '#ffffff' : c);
+    const p = Math.sin(t * 3 + id) * 0.08;
+    ctx.fillStyle = col('#3a1a30');
+    ctx.beginPath(); ctx.ellipse(x, y - 2, 26, 15, 0, 0, Math.PI * 2); ctx.fill();
+    for (const [ox, oy, r] of [[-10, -11, 10], [11, -9, 9], [0, -21, 15]]) {
+      ctx.fillStyle = col('#7a3a5e');
+      ctx.beginPath(); ctx.arc(x + ox, y + oy, r * (1 + p), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = col('#a85a84');
+      ctx.beginPath(); ctx.arc(x + ox - r * 0.25, y + oy - r * 0.3, r * 0.5 * (1 - p), 0, Math.PI * 2); ctx.fill();
+    }
+    if (!flash) {
+      ctx.fillStyle = `rgba(255,224,64,${0.6 + p * 3})`;
+      ctx.beginPath(); ctx.arc(x, y - 22, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    this.miniBar(ctx, x, y - 44, hp, '#ff5a8a');
+  }
+
   drawHazard(ctx, x, y, r, life, t, id) {
     const f = Math.min(1, life / 1.2);
     ctx.fillStyle = `rgba(120,200,30,${0.32 * f})`;
@@ -1130,7 +1274,7 @@ class Renderer {
     ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath(); ctx.ellipse(x, y + 2, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
     const by = y - h;
-    if (kind === 3) {
+    if (kind === 3 || kind === 5) {
       const pulse = 0.5 + Math.sin(t * 4 + id) * 0.5;
       ctx.fillStyle = `rgba(255,80,40,${0.15 + pulse * 0.2})`;
       ctx.beginPath(); ctx.arc(x, by, 18 + pulse * 4, 0, Math.PI * 2); ctx.fill();
@@ -1294,7 +1438,7 @@ function drawWeaponIcon(ctx, id, x, y, sc = 1, color = '#e8e0d0') {
   ctx.restore();
 }
 
-return { T, shade, LOOKS, eliteLook, CHARS, BLOOD, Renderer, GUNS, drawWeaponIcon };
+return { T, shade, LOOKS, VIP_LOOK, eliteLook, CHARS, BLOOD, Renderer, GUNS, drawWeaponIcon };
 })();
 // ---- audio.js
 __mods['audio'] = (() => {
@@ -1320,6 +1464,8 @@ function initAudio() {
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
 }
+
+const isMuted = () => muted;
 
 function toggleMute() {
   muted = !muted;
@@ -1396,6 +1542,8 @@ const SOUNDS = {
   acid: (t, o) => { noise(t, 0.4, { freq: 2500, q: 0.8, vol: 0.18, type: 'highpass', attack: 0.01 }, o); },
   leap: (t, o) => { tone(t, 0.25, { freq: 180, to: 520, type: 'sawtooth', vol: 0.1 }, o); noise(t, 0.2, { freq: 900, q: 1, vol: 0.15 }, o); },
   slam: (t, o) => { noise(t, 0.7, { freq: 300, q: 0.5, vol: 0.9, type: 'lowpass', sweep: 50 }, o); tone(t, 0.4, { freq: 60, to: 30, type: 'sine', vol: 0.6 }, o); },
+  door: (t, o) => { noise(t, 1.4, { freq: 240, q: 0.6, vol: 0.7, type: 'lowpass', attack: 0.1, sweep: 90 }, o); tone(t, 1.3, { freq: 65, to: 42, type: 'sawtooth', vol: 0.22, attack: 0.1 }, o); [660, 880].forEach((f, i) => tone(t + 0.9 + i * 0.14, 0.22, { freq: f, type: 'square', vol: 0.1 }, o)); },
+  task: (t, o) => { [660, 990].forEach((f, i) => tone(t + i * 0.08, 0.18, { freq: f, type: 'triangle', vol: 0.2 }, o)); },
   win: (t, o) => { [523, 659, 784, 1046, 1318].forEach((f, i) => tone(t + i * 0.12, 0.5, { freq: f, type: 'triangle', vol: 0.18 }, o)); },
   over: (t, o) => { [392, 349, 311, 262, 196].forEach((f, i) => tone(t + i * 0.22, 0.5, { freq: f, type: 'sawtooth', vol: 0.12 }, o)); },
 };
@@ -1419,18 +1567,38 @@ function play(name, vol = 1, pan = 0, minGap = 0.035) {
   try { SOUNDS[name] && SOUNDS[name](now, out); } catch (e) { /* ignore */ }
 }
 
-return { initAudio, toggleMute, play };
+return { initAudio, isMuted, toggleMute, play };
 })();
 // ---- game.js
 __mods['game'] = (() => {
 // Client-side game: interpolation, local movement prediction, effects and HUD.
-const { T, LOOKS, CHARS, BLOOD, GUNS, drawWeaponIcon, shade, eliteLook } = __mods['render'];
+const { T, LOOKS, CHARS, BLOOD, GUNS, VIP_LOOK, drawWeaponIcon, shade, eliteLook } = __mods['render'];
 const A = __mods['audio'];
 const INTERP = 0.11;          // seconds of interpolation delay
 const SEND_RATE = 1 / 30;
 const HAIR = ['#3a2a1e', '#d0a040', '#1a1a1a', '#8a3a1a', '#e8dcc0', '#5a3a2a', '#2a2a3a', '#b0602a'];
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 const PERK_KEYS = ['z', 'x', 'c'];
+const USE_TEXT = { 1: 'Take apart', 2: 'Hack', 3: 'Drop fuel' };
+// objective spots: label for the off-screen arrows, and colour of the floor ring
+const SITE_INFO = {
+  term: { label: 'HACK', color: '#5ff0ff' },
+  gen: { label: 'GENERATOR', color: '#ffd030' },
+  hold: { label: 'HOLD', color: '#c890ff', ring: '200,144,255' },
+  evac: { label: 'EXTRACT', color: '#7fff8f', ring: '127,255,143' },
+  fix: { label: 'DOOR', color: '#5ff0ff' },
+};
+const TASK_TEXT = {
+  clear: ['CLEAR THE ZONE', 'Kill every undead to open the door'],
+  nests: ['DESTROY THE NESTS', 'They keep hatching until you burn them out'],
+  hack: ['HACK THE TERMINAL', 'Hold [F] next to it. You can\'t shoot while you work: have someone guard you'],
+  fuel: ['RESTART THE GENERATOR', 'Carry the fuel cans to it. Your hands are full: pistol only'],
+  hold: ['HOLD THE CIRCLE', 'Keep at least one survivor inside until it fills up'],
+  charge: ['GUARD THE BREACH CHARGE', 'It will blow the door. Don\'t let them reach it'],
+  fix: ['COVER DR. BLOCK', 'They work on the door, but stop whenever an undead gets close'],
+  boss: ['KILL THE BOSS', 'The door stays shut until it is dead'],
+  extract: ['GET TO THE EXTRACTION POINT', 'Everyone still standing has to be inside the circle'],
+};
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const lerp = (a, b, f) => a + (b - a) * f;
 function lerpAngle(a, b, f) {
@@ -1443,6 +1611,10 @@ class ClientGame {
     this.r = renderer;
     this.net = net;
     this.hooks = hooks;           // { openChat() }
+    this.vip = start.vip || null;
+    this.ffOn = !!start.ff && start.ff !== 'off';
+    this.menuOpen = false;
+    this.ffNoteT = 0;
     this.myId = start.you;
     this.map = start.map;
     this.weapons = start.weapons;
@@ -1470,8 +1642,10 @@ class ClientGame {
     this.solid = new Uint8Array(m.w * m.h);
     for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) {
       const ch = m.rows[y][x];
-      if (ch === '#' || ch === 'B' || ch === 'T') this.solid[y * m.w + x] = 1;
+      if (ch === '#' || ch === 'B' || ch === 'T' || ch === 'D') this.solid[y * m.w + x] = 1;
     }
+    this.doorMask = 0;
+    this.fogX = this.fogTarget();     // world x where the hidden part of the map starts
     this.structTiles = new Set();
     this.snaps = [];
     this.evq = [];
@@ -1485,6 +1659,9 @@ class ClientGame {
     this.mouse = { x: renderer.cw / 2, y: renderer.ch / 2, down: false };
     this.aimMode = 'keys';       // 'keys' (Space fires where you face) until the mouse is used
     this.fireKey = false;
+    this.lockKey = false;        // Shift: hold the keyboard aim without firing
+    this.useKey = false;         // F
+    this.useMouse = false;       // right mouse button
     this.keyAim = 0;
     this.assist = null;          // enemy the keyboard aim-assist locked on to
     this.particles = [];
@@ -1539,7 +1716,8 @@ class ClientGame {
     if (me.pk) this.perks = me.pk;
     if (me.po !== undefined) { this.offer = me.po || null; this.picks = me.pp || 0; }
     this.un = s.un;
-    if (!(this.un >> this.weapon & 1)) this.weapon = 0;
+    if (!(this.un >> this.weapon & 1) || me.cr) this.weapon = 0;
+    if (s.dm !== undefined && s.dm !== this.doorMask) this.openDoors(s.dm);
     const mine = s.P.get(this.myId);
     if (mine) {
       this.myState = mine[6];
@@ -1553,6 +1731,30 @@ class ClientGame {
       this.me.y = me.tp[1];
       this.me.init = true;
     }
+  }
+
+  // doors the host opened stop being solid here too
+  openDoors(mask) {
+    const m = this.map;
+    (m.zones || []).forEach((z, i) => {
+      if (!z.door || !(mask >> i & 1) || this.doorMask >> i & 1) return;
+      const d = z.door;
+      for (let y = d.y; y < d.y + d.h; y++) for (let x = d.x; x < d.x + d.w; x++) this.solid[y * m.w + x] = 0;
+    });
+    this.doorMask = mask;
+  }
+
+  fogTarget() {
+    const zs = this.map.zones;
+    if (!zs) return Infinity;
+    const z = zs.find((q, i) => q.door && !(this.doorMask >> i & 1));
+    return z ? (z.door.x + z.door.w) * T : Infinity;
+  }
+
+  // everyone in the snapshots, including Dr. Block who isn't in the room's roster
+  who(id) {
+    if (this.vip && id === this.vip.id) return { ...this.vip, look: VIP_LOOK };
+    return this.roster.get(id) || { color: '#888', name: '?' };
   }
 
   serverNow() {
@@ -1574,7 +1776,7 @@ class ClientGame {
       return {
         id: p[0], x: q ? lerp(q[1], p[1], f) : p[1], y: q ? lerp(q[2], p[2], f) : p[2],
         a: q ? lerpAngle(q[3] / 100, ang, f) : ang, hp: p[4], w: p[5], state: p[6], rev: p[7],
-        shooting: p[8], mult: p[9], downT: p[10], kills: p[11], score: p[12], maxhp: p[13] || 100,
+        shooting: p[8], mult: p[9], downT: p[10], kills: p[11], score: p[12], maxhp: p[13] || 100, carry: p[14] & 1, busy: p[14] & 2,
       };
     });
     const enemies = b.e.map(e => {
@@ -1590,7 +1792,7 @@ class ClientGame {
       return { id: p[0], kind: p[1], x: q ? lerp(q[2], p[2], f) : p[2], y: q ? lerp(q[3], p[3], f) : p[3],
         vx: q ? p[2] - q[2] : 1, vy: q ? p[3] - q[3] : 0 };
     });
-    return { players, enemies, projs, items: b.it, structs: b.st, hazards: b.hz || [] };
+    return { players, enemies, projs, items: b.it, structs: b.st, hazards: b.hz || [], sites: b.zs || [] };
   }
 
   // ------------------------------------------------------------- input --
@@ -1598,6 +1800,8 @@ class ClientGame {
     const k = e.key.toLowerCase();
     if (k === 'tab') { this.showScores = true; e.preventDefault(); return; }
     if (k === ' ') { this.fireKey = true; this.aimMode = 'keys'; return; }
+    if (k === 'shift') { this.lockKey = true; this.aimMode = 'keys'; return; }
+    if (k === 'f') { this.useKey = true; return; }
     this.keys.add(k);
     const pi = PERK_KEYS.indexOf(k);
     if (pi >= 0 && this.offer && this.offer[pi] !== undefined) { this.pickPerk(pi); return; }
@@ -1615,6 +1819,8 @@ class ClientGame {
     const k = e.key.toLowerCase();
     if (k === 'tab') { this.showScores = false; e.preventDefault(); }
     if (k === ' ') this.fireKey = false;
+    if (k === 'shift') this.lockKey = false;
+    if (k === 'f') this.useKey = false;
     this.keys.delete(k);
   }
 
@@ -1622,6 +1828,9 @@ class ClientGame {
     this.keys.clear();
     this.mouse.down = false;
     this.fireKey = false;
+    this.lockKey = false;
+    this.useKey = false;
+    this.useMouse = false;
     this.showScores = false;
   }
 
@@ -1642,6 +1851,7 @@ class ClientGame {
 
   select(i) {
     if (i < 0 || i >= this.weapons.length || !(this.un >> i & 1) || i === this.weapon) return;
+    if (this.priv.cr) { this.announce('HANDS FULL', 'Only the pistol while you carry fuel. [F] drops it', 1.4, true); return; }
     this.weapon = i;
     this.switchT = 1.3;
     this.fireCd = Math.max(this.fireCd, 0.12);
@@ -1704,20 +1914,27 @@ class ClientGame {
     while (this.evq.length && (this.evq[0].tm <= rt || this.evq.length > 6)) this.handleEvents(this.evq.shift().ev);
     this.view = this.interp(rt);
     this.switchT = Math.max(0, this.switchT - dt);
+    this.ffNoteT = Math.max(0, this.ffNoteT - dt);
     const alive = this.myState === 0 && !this.paused;
+    const frozen = this.chatting || this.menuOpen;
     const r = this.r;
+    const target = this.fogTarget();
+    if (target === Infinity) this.fogX = this.fogX < Infinity ? this.fogX + dt * 900 : Infinity;
+    else this.fogX += clamp(target - this.fogX, -dt * 900, dt * 900);
+    if (this.fogX > this.map.w * T + 80) this.fogX = Infinity;
 
     // --- local movement
     if (alive && this.me.init) {
       let mx = 0, my = 0;
-      if (!this.chatting) {
+      if (!frozen) {
         if (this.keys.has('w') || this.keys.has('arrowup')) my -= 1;
         if (this.keys.has('s') || this.keys.has('arrowdown')) my += 1;
         if (this.keys.has('a') || this.keys.has('arrowleft')) mx -= 1;
         if (this.keys.has('d') || this.keys.has('arrowright')) mx += 1;
       }
       const l = Math.hypot(mx, my);
-      if (l > 0) this.keyAim = Math.atan2(my, mx);
+      // Holding Space (or Shift) locks the aim: the keys only move you, so you can strafe and back away
+      if (l > 0 && !this.fireKey && !this.lockKey) this.keyAim = Math.atan2(my, mx);
       if (l > 0) {
         const step = this.speed * dt / l;
         const n = Math.max(1, Math.ceil(this.speed * dt / 8));
@@ -1731,7 +1948,15 @@ class ClientGame {
     // --- aim
     let wx, wy;
     if (this.aimMode === 'keys') {
-      this.me.a = this.assistAim(this.keyAim);
+      if (this.ws[this.weapon].kind === 'place') {
+        // building goes exactly where you face, never towards the nearest enemy
+        this.assist = null;
+        this.me.a = this.keyAim;
+      } else {
+        this.me.a = this.assistAim(this.keyAim);
+        // while firing the aim tracks the locked target, so strafing around it doesn't lose it
+        if (this.fireKey && this.assist) this.keyAim = this.me.a;
+      }
       wx = this.me.x + Math.cos(this.keyAim) * 380;
       wy = this.me.y + Math.sin(this.keyAim) * 380;
     } else {
@@ -1739,13 +1964,15 @@ class ClientGame {
       [wx, wy] = r.toWorld(this.mouse.x, this.mouse.y);
       this.me.a = Math.atan2(wy - (this.me.y - 14), wx - this.me.x);
     }
-    const trigger = (this.mouse.down || this.fireKey) && !this.chatting;
+    const trigger = (this.mouse.down || this.fireKey) && !frozen;
+    const using = (this.useKey || this.useMouse) && !frozen;
 
     // --- local fire feedback (server is authoritative for hits)
     const w = this.ws[this.weapon];
     this.fireCd -= dt;
     this.recoil = Math.max(0, this.recoil - dt * 6);
-    if (alive && trigger) {
+    const busy = using && this.priv.uk > 0 && this.priv.uk < 3;
+    if (alive && trigger && !busy) {
       const ammo = this.priv.am[this.weapon];
       if (ammo === 0) {
         if (this.fireCd <= 0) { A.play('empty', 0.8); this.fireCd = 0.3; this.autoSwitch(); }
@@ -1760,7 +1987,7 @@ class ClientGame {
     if (this.sendT <= 0 && !this.paused) {
       this.sendT = SEND_RATE;
       this.net.send({ t: 'in', x: +this.me.x.toFixed(1), y: +this.me.y.toFixed(1), a: +this.me.a.toFixed(3),
-        f: alive && trigger ? 1 : 0, w: this.weapon });
+        f: alive && trigger ? 1 : 0, i: alive && using ? 1 : 0, w: this.weapon });
     }
 
     // --- ambient effects from state
@@ -1768,7 +1995,7 @@ class ClientGame {
       for (const p of this.view.players) {
         const isMe = p.id === this.myId;
         const wid = isMe ? this.weapon : p.w;
-        const firing = isMe ? alive && trigger && this.priv.am[wid] !== 0 : p.shooting;
+        const firing = isMe ? alive && trigger && !busy && this.priv.am[wid] !== 0 : p.shooting;
         if (this.weapons[wid] && this.weapons[wid].id === 'flame' && firing && p.state === 0) {
           const px = isMe ? this.me.x : p.x, py = isMe ? this.me.y : p.y, pa = isMe ? this.me.a : p.a;
           this.flameFx(px, py, pa);
@@ -1808,6 +2035,7 @@ class ClientGame {
 
   // Keyboard aiming: shoot where you face, but snap to an enemy close to that direction.
   assistAim(base) {
+    const prev = this.assist;
     this.assist = null;
     if (!this.view) return base;
     let best = null, bestScore = 1e9;
@@ -1818,7 +2046,8 @@ class ClientGame {
       if (diff > Math.PI) diff = Math.PI * 2 - diff;
       const cone = d < 70 ? 0.9 : 0.38;    // very close enemies get a wider cone
       if (diff > cone) continue;
-      const score = d * (1 + diff * 4);
+      // stay on the current target while it is still a decent choice, so the aim doesn't flicker
+      const score = d * (1 + diff * 4) * (e.id === prev ? 0.6 : 1);
       if (score < bestScore) { bestScore = score; best = e; }
     }
     if (!best) return base;
@@ -1893,7 +2122,7 @@ class ClientGame {
           const [, x, y, tid, pts, mult, pid] = e;
           const type = this.etypes[tid];
           const L = LOOKS[type];
-          const big = type === 'colossus' || type === 'juggernaut' ? 3 : type === 'brute' ? 1.8 : type === 'splitling' ? 0.6 : 1;
+          const big = type === 'colossus' || type === 'juggernaut' ? 3 : type === 'brute' || type === 'nest' ? 1.8 : type === 'splitling' ? 0.6 : 1;
           r.splat(x, y, 10 * big, BLOOD[type]);
           for (let i = 0; i < 9 * big; i++) {
             const colr = [L.skin, L.shirt, L.pants, BLOOD[type]][i % 4];
@@ -1903,8 +2132,8 @@ class ClientGame {
           this.sound('splat', x, y, type === 'colossus' ? 1 : 0.6);
           if (type === 'colossus' || type === 'juggernaut') { this.shake = 14; this.announce(`${type.toUpperCase()} SLAIN`, '', 2.5); }
           if (pts > 0) {
-            const info = this.roster.get(pid);
-            this.texts.push({ x, y: y - 30, text: `+${pts}` + (mult > 1 ? ` x${mult}` : ''), color: info ? info.color : '#fff', life: 1.1, max: 1.1, big: pid === this.myId });
+            const info = this.who(pid);
+            this.texts.push({ x, y: y - 30, text: `+${pts}` + (mult > 1 ? ` x${mult}` : ''), color: pid ? info.color : '#fff', life: 1.1, max: 1.1, big: pid === this.myId });
           }
           this.anim.delete(e[8]);
           this.flash.delete(e[8]);
@@ -2000,6 +2229,52 @@ class ClientGame {
           } else this.sysChat(`${this.name(e[1])} took ${pk.name}.`);
           break;
         }
+        case 'ff':
+          // only nag the shooter now and then; their victim sees the damage flash anyway
+          if (e[1] === this.myId && e[2] !== this.myId && this.ffNoteT <= 0) {
+            this.ffNoteT = 2.5;
+            this.announce('FRIENDLY FIRE!', `You hit ${this.name(e[2])}`, 1.4, true, '#ff8a50');
+          }
+          break;
+        case 'dm': {
+          const [, pid, type, refund] = e;
+          const p = this.latest.P.get(pid);
+          if (p) {
+            this.sound('break', p[1], p[2], 0.5);
+            if (pid === this.myId) this.texts.push({ x: p[1], y: p[2] - 30, text: refund ? 'TAKEN APART +1' : 'TAKEN APART', color: '#d9a441', life: 1, max: 1 });
+          }
+          break;
+        }
+        case 'zone': {
+          const zs = this.map.zones.length;
+          A.play('wave', 1);
+          this.announce(`ZONE ${e[1] + 1} / ${zs}`, e[2] || '', 2.6);
+          break;
+        }
+        case 'task': {
+          const tx = TASK_TEXT[e[1]];
+          if (tx) this.announce(tx[0], tx[1], 4, true, '#8af0a0');
+          break;
+        }
+        case 'task_ok':
+          A.play('task', 0.9);
+          this.lights.push({ x: e[1], y: e[2], r: 200, i: 0.7, life: 0.4, max: 0.4 });
+          for (let i = 0; i < 16; i++) this.addP({ t: 'spark', x: e[1], y: e[2], z: 16, vx: (Math.random() - 0.5) * 220, vy: (Math.random() - 0.5) * 220, vz: 30, life: 0.5, size: 3, color: '#7fff8f' });
+          break;
+        case 'door': {
+          const d = this.map.zones[e[1]].door;
+          A.play('door', 1);
+          this.shake = Math.max(this.shake, 9);
+          for (let y = d.y; y < d.y + d.h; y++) {
+            for (let i = 0; i < 12; i++) this.addP({ t: 'smoke', x: (d.x + Math.random() * d.w) * T, y: (y + Math.random()) * T, z: 6, vx: (Math.random() - 0.5) * 120, vy: (Math.random() - 0.5) * 80, vz: 25, life: 1.2, size: 8, grow: 16, drag: 2, color: '#7a7060' });
+            this.lights.push({ x: (d.x + 1) * T, y: y * T, r: 220, i: 0.6, life: 0.5, max: 0.5 });
+          }
+          break;
+        }
+        case 'zclr':
+          A.play('clear', 1);
+          this.announce('THE DOOR IS OPEN', 'Pick a perk [Z] [X] [C], restock, then move up', 3.4, false, '#8af0a0');
+          break;
         case 'sw':
           A.play('revive', e[1] === this.myId ? 1 : 0.4);
           if (e[1] === this.myId) this.announce('SECOND WIND', 'Back on your feet!', 2, true);
@@ -2014,8 +2289,13 @@ class ClientGame {
           break;
         case 'down': {
           const n = this.name(e[1]);
-          if (e[1] === this.myId) { A.play('down', 1); this.announce('YOU ARE DOWN', 'A teammate must stand next to you to revive you', 3); }
-          else { this.sysChat(`${n} is down! Go revive them.`); A.play('down', 0.6); }
+          const by = e[2] && e[2] !== e[1] ? this.name(e[2]) : null;
+          if (e[1] === this.myId) { A.play('down', 1); this.announce('YOU ARE DOWN', by ? `Shot by ${by}! A teammate must stand next to you to revive you` : 'A teammate must stand next to you to revive you', 3); }
+          else {
+            this.sysChat(by ? `${by} shot ${n} down! Go revive them.` : `${n} is down! Go revive them.`);
+            A.play('down', 0.6);
+            if (this.vip && e[1] === this.vip.id) this.announce(`${n.toUpperCase()} IS DOWN`, 'Revive them or the mission fails!', 3);
+          }
           break;
         }
         case 'rev':
@@ -2025,6 +2305,11 @@ class ClientGame {
         case 'dead': this.sysChat(`${this.name(e[1])} bled out.`); break;
         case 'pk': {
           const [, pid, kind, x, y, u] = e;
+          if (kind === 5) {
+            A.play('pickup', pid === this.myId ? 1 : 0.5);
+            if (pid === this.myId) this.announce('FUEL PICKED UP', 'Bring it to the generator. Hands full: pistol only', 2.2, true, '#ff8a50');
+            break;
+          }
           if (kind === 3) {
             A.play('unlock', pid === this.myId ? 1 : 0.6);
             const ob = this.latest && this.latest.ob;
@@ -2059,7 +2344,8 @@ class ClientGame {
           const bosses = Array.isArray(e[2]) ? e[2].map(t => this.etypes[t]) : [];
           const sub = bosses.length > 1 ? 'Multiple bosses are coming!' : bosses[0] === 'juggernaut' ? 'The Juggernaut is coming! Dodge its charge.'
             : bosses[0] ? 'A Colossus is coming!' : 'Here they come...';
-          this.announce(`WAVE ${e[1]}`, sub, 2.8);
+          if (this.map.zones) this.sysChat(sub);
+          else this.announce(`WAVE ${e[1]}`, sub, 2.8);
           const muts = (e[3] || []).map(id => this.mutDefs[id]).filter(Boolean);
           if (muts.length && this.mode === 'gauntlet') {
             this.announce(muts.map(m => m.name.toUpperCase()).join(' + '), muts.map(m => m.desc).join(' · '), 3.4, true, '#c890ff');
@@ -2075,8 +2361,8 @@ class ClientGame {
   }
 
   name(id) {
-    const info = this.roster.get(id);
-    return info ? info.name : 'Someone';
+    const info = this.who(id);
+    return info.name === '?' ? 'Someone' : info.name;
   }
 
   sysChat(text) {
@@ -2247,6 +2533,30 @@ class ClientGame {
       lights.push({ x: h[1], y: h[2], r: 70, i: 0.35 });
     }
     for (const s of v.structs) if (s[1] === 1) r.drawMine(ctx, s[2], s[3], t + s[0]);
+    // standing areas are painted on the floor; consoles stand in the scene with everything else
+    for (const s of v.sites) {
+      const [kind, x, y, rad, pct, stalled] = s;
+      if (kind === 'hold' || kind === 'evac') {
+        r.drawRing(ctx, x, y, rad, pct, t, SITE_INFO[kind].ring);
+        lights.push({ x, y, r: rad * 2.4, i: 0.55 });
+      } else if (kind === 'term' || kind === 'fix') {
+        drawables.push({ y: y + 12, draw: c => r.drawTerminal(c, x, y, pct, t, stalled) });
+        lights.push({ x, y: y - 16, r: 120, i: 0.75 });
+      } else if (kind === 'gen') {
+        r.shadow(x, y + 6, 18);
+        drawables.push({ y: y + 15.5, draw: c => r.drawGenerator(c, x, y, 100, pct >= 100 ? t : 0) });
+        lights.push({ x, y: y - 10, r: 200, i: 0.7 });
+      }
+    }
+    // blast doors, one tile row at a time so characters sort correctly against them
+    (this.map.zones || []).forEach((z, i) => {
+      const d = z.door;
+      if (!d || this.doorMask >> i & 1) return;
+      for (let ty = d.y; ty < d.y + d.h; ty++) {
+        drawables.push({ y: (ty + 1) * T - 0.5, draw: c => r.drawDoor(c, d.x * T, ty * T, d.w * T, ty === d.y + d.h - 1, t) });
+      }
+      lights.push({ x: (d.x + d.w / 2) * T, y: (d.y + d.h / 2) * T, r: 150, i: 0.55 });
+    });
 
     // players
     for (const p of v.players) {
@@ -2255,18 +2565,26 @@ class ClientGame {
       const x = isMe && p.state === 0 ? this.me.x : p.x;
       const y = isMe && p.state === 0 ? this.me.y : p.y;
       const a = isMe ? this.me.a : p.a;
-      const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+      const info = this.who(p.id);
       const ph = this.walk('p' + p.id, x, y, 0.2);
       const wid = isMe ? this.weapons[this.weapon].id : this.weapons[p.w].id;
       const flash = (this.flash.get('p' + p.id) || 0) > t;
       r.shadow(x, y, 12);
       const rec = isMe ? this.recoil * 3 : 0;
-      const look = CHARS[info.char] || CHARS[0];
-      drawables.push({ y, draw: c => r.drawChar(c, { x: x - Math.cos(a) * rec, y: y - Math.sin(a) * rec, a, look, shirt: info.color, hair: look.hair ? HAIR[p.id % HAIR.length] : null, phase: ph, gun: GUNS[wid], down: p.state === 1, flash, t, id: p.id }) });
+      const look = info.look || CHARS[info.char] || CHARS[0];
+      const gun = info.look || p.busy ? null : GUNS[wid];   // Dr. Block is unarmed, and working a console takes both hands
+      drawables.push({ y, draw: c => r.drawChar(c, { x: x - Math.cos(a) * rec, y: y - Math.sin(a) * rec, a, look, shirt: info.color, hair: look.hair ? HAIR[p.id % HAIR.length] : null, phase: ph, gun, down: p.state === 1, flash, t, id: p.id }) });
       lights.push({ x, y: y - 10, r: isMe ? 380 : 300, i: isMe ? 0.95 : 0.8 });
     }
     // enemies
     for (const e of v.enemies) {
+      if (e.type === 'nest') {
+        r.shadow(e.x, e.y, 20);
+        const fl = (this.flash.get(e.id) || 0) > t;
+        drawables.push({ y: e.y, draw: c => r.drawNest(c, e.x, e.y, e.hp, t, e.id, fl) });
+        lights.push({ x: e.x, y: e.y - 20, r: 120, i: 0.6 });
+        continue;
+      }
       const L = e.elite ? eliteLook(e.type) : LOOKS[e.type];
       const ph = this.walk(e.id, e.x, e.y, e.type === 'sprinter' || e.type === 'splitling' ? 0.3 : 0.18);
       if (!L.ghost) r.shadow(e.x, e.y, 10 * L.s * (L.fat ? 1.3 : 1));
@@ -2312,6 +2630,7 @@ class ClientGame {
     }
     r.drawScene(drawables);
     this.drawParticles(ctx);
+    if (this.fogX !== Infinity) r.drawFog(ctx, this.fogX, t);
 
     // fire particles light up the scene
     let fl = 0;
@@ -2337,12 +2656,23 @@ class ClientGame {
   }
 
   drawOverlays(ctx, v) {
+    const r = this.r;
     ctx.textAlign = 'center';
+    this.drawPlacement(ctx);
     if (this.aimMode === 'keys' && this.myState === 0) {
       // facing indicator around the player and a bracket on the aim-assist target
       const a = this.me.a, cx = this.me.x, cy = this.me.y - 8;
       const px = cx + Math.cos(a) * 30, py = cy + Math.sin(a) * 30;
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      const locked = this.fireKey || this.lockKey;
+      if (locked) {
+        // aim locked: show the firing line so it is clear where the shots go while strafing
+        ctx.setLineDash([7, 8]);
+        ctx.strokeStyle = this.assist ? 'rgba(255,110,90,0.55)' : 'rgba(255,225,150,0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(cx + Math.cos(a) * 280, cy + Math.sin(a) * 280); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.fillStyle = locked ? '#ffd36a' : 'rgba(255,255,255,0.75)';
       ctx.beginPath();
       ctx.moveTo(px + Math.cos(a) * 7, py + Math.sin(a) * 7);
       ctx.lineTo(px + Math.cos(a + 2.4) * 6, py + Math.sin(a + 2.4) * 6);
@@ -2385,7 +2715,14 @@ class ClientGame {
       const isMe = p.id === this.myId;
       const x = isMe && p.state === 0 ? this.me.x : p.x;
       const y = isMe && p.state === 0 ? this.me.y : p.y;
-      const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+      const info = this.who(p.id);
+      if (p.state === 0 && p.carry) r.drawItem(ctx, 3, x, y - 38, this.time, p.id);
+      if (!isMe && p.state === 0 && p.busy) {
+        ctx.font = '800 9px Rubik, sans-serif';
+        ctx.fillStyle = '#5ff0ff';
+        ctx.fillText('WORKING: COVER ME', x, y - 54);
+      }
+      if (isMe && p.state === 0 && this.priv.uk) this.drawUsePrompt(ctx, x, y);
       if (isMe && this.switchT > 0 && p.state === 0) {
         // weapon name pops up over your head when you switch
         const w = this.weapons[this.weapon];
@@ -2428,6 +2765,18 @@ class ClientGame {
         }
       }
     }
+    // objective labels in the world
+    ctx.font = '800 9px Rubik, sans-serif';
+    for (const [kind, x, y, rad, pct, stalled] of v.sites) {
+      const info = SITE_INFO[kind];
+      if (!info) continue;
+      const top = rad ? y - rad * 0.8 - 8 : y - 44;
+      const label = kind === 'gen' ? `${info.label}: BRING FUEL` : stalled ? 'INTERRUPTED' : `${info.label} ${pct}%`;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillText(label, x + 0.7, top + 0.7);
+      ctx.fillStyle = stalled ? '#ff6050' : info.color;
+      ctx.fillText(label, x, top);
+    }
     // upgrade crate labels
     ctx.font = '700 8px Rubik, sans-serif';
     for (const it of v.items) {
@@ -2452,8 +2801,54 @@ class ClientGame {
     ctx.globalAlpha = 1;
   }
 
+  // ghost tile where a barricade or sentry would land: green if it fits, red if not
+  drawPlacement(ctx) {
+    const w = this.weapons[this.weapon];
+    if (this.myState !== 0 || w.kind !== 'place' || w.id === 'mine' || !this.priv.am[this.weapon]) return;
+    const a = this.me.a;
+    const tx = Math.floor((this.me.x + Math.cos(a) * 34) / T), ty = Math.floor((this.me.y + Math.sin(a) * 34) / T);
+    const inside = tx === Math.floor(this.me.x / T) && ty === Math.floor(this.me.y / T);
+    const bad = this.isSolid(tx, ty) || inside || this.map.rows[ty]?.[tx] === 'S';
+    ctx.fillStyle = bad ? 'rgba(232,66,63,0.22)' : 'rgba(127,255,143,0.2)';
+    ctx.strokeStyle = bad ? 'rgba(232,66,63,0.8)' : 'rgba(127,255,143,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(tx * T + 1, ty * T + 1, T - 2, T - 2);
+    ctx.strokeRect(tx * T + 1, ty * T + 1, T - 2, T - 2);
+  }
+
+  drawUsePrompt(ctx, x, y) {
+    const pct = this.priv.up2 || 0, label = `[F] ${USE_TEXT[this.priv.uk] || ''}`;
+    const top = y - 66;
+    ctx.font = '800 10px Rubik, sans-serif';
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillText(label, x + 0.8, top + 0.8);
+    ctx.fillStyle = '#ffd36a';
+    ctx.fillText(label, x, top);
+    if (pct > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(x - 22, top + 3, 44, 5);
+      ctx.fillStyle = '#ffd36a';
+      ctx.fillRect(x - 21, top + 4, 42 * pct / 100, 3);
+    }
+  }
+
   // --------------------------------------------------------------- HUD --
   objectiveText(ob) {
+    if (ob[0] === 'run') {
+      switch (ob[3]) {
+        case 'move': return ob[1] === 1 ? 'Get ready...' : 'The way is open: move up!';
+        case 'clear': return 'Clear the zone to open the door';
+        case 'nests': return `Destroy the nests: ${ob[4]} left`;
+        case 'hack': return ob[5] > 1 ? `Hack the terminals: ${ob[4]} / ${ob[5]}` : `Hack the terminal: ${ob[6]}%`;
+        case 'fuel': return `Fuel the generator: ${ob[4]} / ${ob[5]}`;
+        case 'hold': return `Hold the circle: ${ob[4]}%`;
+        case 'charge': return `Guard the charge: ${ob[4]}s · ${ob[5]}% health`;
+        case 'fix': return ob[5] ? 'Dr. Block is under attack!' : `Dr. Block is fixing the door: ${ob[4]}%`;
+        case 'boss': return 'Kill the boss to open the way';
+        case 'extract': return `Everyone to the extraction point (${ob[4]}s)`;
+      }
+      return '';
+    }
     switch (ob[0]) {
       case 'waves': return ob[1] ? `Objective: survive wave ${ob[1]} of ${ob[2]}` : `Objective: survive ${ob[2]} waves`;
       case 'defend': return `Generator ${ob[1]}%  ·  wave ${ob[3]} of ${ob[2]}`;
@@ -2500,11 +2895,13 @@ class ClientGame {
     const lw = 240 * u;
     const panH = (74 + (ob ? 20 : 0) + muts.length * 16) * u;
     panel(pad, pad, lw, panH);
-    text(s.wv ? `WAVE ${s.wv}` : 'GET READY', pad + 12 * u, pad + 32 * u, 26 * u, '#f2b33a', 'left', 400, 'Bungee');
-    text(s.ws ? `${s.left} undead remaining` : `Next wave in ${Math.ceil(s.wt)}s`, pad + 12 * u, pad + 52 * u, 13 * u, '#efe6d8', 'left', 600);
+    const inRun = ob && ob[0] === 'run';
+    text(inRun ? `ZONE ${ob[1]}/${ob[2]}` : s.wv ? `WAVE ${s.wv}` : 'GET READY', pad + 12 * u, pad + 32 * u, 26 * u, '#f2b33a', 'left', 400, 'Bungee');
+    const waitText = inRun ? (ob[1] === 1 ? `Starting in ${Math.ceil(s.wt)}s` : `Zone wakes up in ${Math.ceil(s.wt)}s, or when you go in`) : `Next wave in ${Math.ceil(s.wt)}s`;
+    text(s.ws ? `${s.left} undead ${inRun ? 'around' : 'remaining'}` : waitText, pad + 12 * u, pad + 52 * u, (inRun && !s.ws ? 11 : 13) * u, '#efe6d8', 'left', 600);
     text(`TEAM SCORE ${s.sc.toLocaleString()}`, pad + 12 * u, pad + 67 * u, 11 * u, '#9c917f', 'left', 600);
-    const tag = this.mission ? `MISSION ${this.mission.idx + 1}` : this.mode.toUpperCase();
-    text(`${tag} · ${(this.diff || '').toUpperCase()}`, pad + lw - 12 * u, pad + 22 * u, 9 * u, '#6b6255', 'right', 800);
+    const tag = this.mission ? `#${this.mission.num}` : this.mode.toUpperCase();
+    text(`${tag} · ${(this.diff || '').toUpperCase()}${this.ffOn ? ' · FF' : ''}`, pad + lw - 12 * u, pad + 67 * u, 9 * u, '#6b6255', 'right', 800);
     let ly = pad + 67 * u;
     if (ob) {
       ly += 20 * u;
@@ -2520,7 +2917,7 @@ class ClientGame {
     // --- team list
     let ty = pad + panH + 10 * u;
     for (const p of v.players) {
-      const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+      const info = this.who(p.id);
       panel(pad, ty, lw, 26 * u);
       ctx.fillStyle = info.color;
       ctx.fillRect(pad + 6 * u, ty + 6 * u, 14 * u, 14 * u);
@@ -2724,15 +3121,24 @@ class ClientGame {
       ctx.drawImage(mm, mx0, my0, mw, mh);
       ctx.imageSmoothingEnabled = true;
       const k = ms * mm.width / (this.map.w * T);
+      if (this.fogX !== Infinity) {
+        ctx.fillStyle = '#0a0908';
+        ctx.fillRect(mx0 + this.fogX * k, my0, mw - this.fogX * k, mh);
+      }
+      for (const st of v.sites) {
+        if ((this.time * 3 | 0) % 2) continue;
+        ctx.fillStyle = (SITE_INFO[st[0]] || { color: '#fff' }).color;
+        ctx.fillRect(mx0 + st[1] * k - 3, my0 + st[2] * k - 3, 6, 6);
+      }
       for (const e of v.enemies) {
         const big = e.type === 'colossus' || e.type === 'juggernaut';
         ctx.fillStyle = e.elite ? '#ffc040' : '#ff4a3a';
         ctx.fillRect(mx0 + e.x * k - 1, my0 + e.y * k - 1, big ? 5 : 2.5, big ? 5 : 2.5);
       }
       for (const it of v.items) {
-        if (it[1] === 3 && (this.time * 3 | 0) % 2) continue;
+        if ((it[1] === 3 || it[1] === 5) && (this.time * 3 | 0) % 2) continue;
         const big = it[1] >= 2 ? 4.5 : 2.5;
-        ctx.fillStyle = it[1] === 3 ? '#ff7a40' : it[1] === 2 ? '#ffb020' : '#e8d060';
+        ctx.fillStyle = it[1] === 3 || it[1] === 5 ? '#ff7a40' : it[1] === 2 ? '#ffb020' : '#e8d060';
         ctx.fillRect(mx0 + it[2] * k - big / 2, my0 + it[3] * k - big / 2, big, big);
       }
       for (const st of v.structs) {
@@ -2744,7 +3150,7 @@ class ClientGame {
       }
       for (const p of v.players) {
         if (p.state === 2) continue;
-        const info = this.roster.get(p.id) || { color: '#fff' };
+        const info = this.who(p.id);
         const ppx = p.id === this.myId ? this.me.x : p.x, ppy = p.id === this.myId ? this.me.y : p.y;
         ctx.fillStyle = '#000';
         ctx.fillRect(mx0 + ppx * k - 3, my0 + ppy * k - 3, 6, 6);
@@ -2756,8 +3162,16 @@ class ClientGame {
 
     // --- pointers to off-screen objectives and downed teammates
     const marks = [];
-    for (const it of v.items) if (it[1] === 3) marks.push([it[2], it[3], '#ff7a40', 'FUEL']);
-    for (const st of v.structs) if (st[1] === 3) marks.push([st[2], st[3], '#ffd030', 'GEN']);
+    for (const it of v.items) if (it[1] === 3 || it[1] === 5) marks.push([it[2], it[3], '#ff7a40', 'FUEL']);
+    for (const st of v.structs) if (st[1] === 3) marks.push([st[2], st[3], '#ffd030', this.map.zones ? 'CHARGE' : 'GEN']);
+    for (const st of v.sites) if (SITE_INFO[st[0]]) marks.push([st[1], st[2], SITE_INFO[st[0]].color, SITE_INFO[st[0]].label]);
+    for (const e of v.enemies) if (e.type === 'nest') marks.push([e.x, e.y, '#ff5a8a', 'NEST']);
+    const vipView = this.vip && v.players.find(p => p.id === this.vip.id);
+    if (vipView && vipView.state === 0) marks.push([vipView.x, vipView.y, '#f2efe6', 'DR. BLOCK']);
+    if (s.ws === 0 && inRun && ob[1] > 1) {
+      const z = this.map.zones[ob[1] - 1];
+      marks.push([(z.x0 + 1) * T, (z.entry[1] + 0.5) * T, '#8af0a0', 'DOOR']);
+    }
     for (const p of v.players) if (p.state === 1 && p.id !== this.myId) marks.push([p.x, p.y, '#ff5040', 'REVIVE']);
     const m0 = 34 * u;
     for (const [x, y, color, label] of marks) {
@@ -2779,7 +3193,8 @@ class ClientGame {
     }
 
     // --- announcements
-    let ay = H * 0.24;
+    // kept in the top third, clear of the player and the prompts over their head
+    let ay = H * 0.15;
     for (const a of this.announces) {
       const f = a.life / a.max;
       const alpha = Math.min(1, (1 - f) * 8, f * 4);
@@ -2789,7 +3204,16 @@ class ClientGame {
       text(a.title, W / 2, ay, (a.small ? 22 : 46) * u * pop, col, 'center', 400, 'Bungee');
       if (a.sub) text(a.sub, W / 2, ay + 28 * u, 16 * u, '#efe6d8', 'center', 600);
       ctx.globalAlpha = 1;
-      ay += 80 * u;
+      ay += (a.sub ? 66 : 44) * u;
+    }
+
+    // --- walled in: say how to get out
+    if (me && me.state === 0 && this.priv.bx) {
+      const pulse = 0.75 + Math.sin(this.time * 4) * 0.25;
+      ctx.globalAlpha = pulse;
+      text('YOU ARE WALLED IN', W / 2, H * 0.72, 18 * u, '#ffb040', 'center', 400, 'Bungee');
+      ctx.globalAlpha = 1;
+      text('The undead break through faster the longer you sit here. Hold [F] next to a wall to take it down.', W / 2, H * 0.72 + 20 * u, 13 * u, '#efe6d8', 'center', 600);
     }
 
     // --- state overlays
@@ -2807,7 +3231,7 @@ class ClientGame {
 
     // --- scoreboard
     if (this.showScores) {
-      const rows = [...v.players].sort((a, b) => b.score - a.score);
+      const rows = v.players.filter(p => !this.vip || p.id !== this.vip.id).sort((a, b) => b.score - a.score);
       const bw = 460 * u, bh = (70 + rows.length * 30) * u;
       const bx = W / 2 - bw / 2, by = H / 2 - bh / 2;
       panel(bx, by, bw, bh);
@@ -2815,7 +3239,7 @@ class ClientGame {
       text('KILLS', bx + bw - 140 * u, by + 30 * u, 11 * u, '#9c917f', 'right', 800);
       text('SCORE', bx + bw - 18 * u, by + 30 * u, 11 * u, '#9c917f', 'right', 800);
       rows.forEach((p, i) => {
-        const info = this.roster.get(p.id) || { color: '#888', name: '?' };
+        const info = this.who(p.id);
         const yy = by + (62 + i * 30) * u;
         ctx.fillStyle = info.color;
         ctx.fillRect(bx + 18 * u, yy - 11 * u, 12 * u, 12 * u);
@@ -2826,11 +3250,11 @@ class ClientGame {
     }
 
     // --- pause screen
-    if (this.paused) {
+    if (this.paused && !this.menuOpen) {
       ctx.fillStyle = 'rgba(6,5,4,0.6)';
       ctx.fillRect(0, 0, W, H);
       text('PAUSED', W / 2, H * 0.42, 64 * u, '#f2b33a', 'center', 400, 'Bungee');
-      text(this.isHost ? 'Press Esc to resume' : 'The host paused the game. Waiting for them to resume...', W / 2, H * 0.42 + 40 * u, 18 * u, '#efe6d8', 'center', 600);
+      text('The host paused the game. Waiting for them to resume...', W / 2, H * 0.42 + 40 * u, 18 * u, '#efe6d8', 'center', 600);
       text('Chat (Enter) and perk picks still work', W / 2, H * 0.42 + 66 * u, 13 * u, '#9c917f', 'center', 600);
     }
 
@@ -2874,7 +3298,13 @@ const BLEED_TIME = 25;       // seconds a downed player can be revived
 const REVIVE_TIME = 2.5;
 const REVIVE_DIST = 46;
 const COMBO_TIME = 2.6;      // seconds to chain the next kill
-const SOLID_CHARS = new Set(['#', 'B', 'T']);
+const USE_DIST = 46;         // reach of the interact key (terminals, dismantling)
+const DISMANTLE_TIME = 0.6;
+const CARRY_SPEED = 0.8;     // move speed while hauling a fuel can
+const VIP_ID = 9999;         // player id of the escort NPC (clients count up from 1)
+const VIP_HP = 320;
+const VIP_SPEED = 135;
+const SOLID_CHARS = new Set(['#', 'B', 'T', 'D']);
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const randint = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
@@ -2887,7 +3317,8 @@ function angdiff(a, b) {
 }
 
 // ================================================================== maps ==
-// Tile legend: # wall, B crate/car/hay, T tree/pillar, . , floor, S enemy spawn, P player spawn
+// Tile legend: # wall, B crate/car/hay, T tree/pillar, . , floor, S enemy spawn, P player spawn,
+// D blast door (solid until the game opens it)
 function seeded(a) {
   return () => {
     a = (a + 0x6D2B79F5) | 0;
@@ -3020,6 +3451,83 @@ function makeCemetery() {
   return g;
 }
 
+// ------------------------------------------------------- Breakthrough maps --
+// A long strip of zones running left to right, split by blast doors. Every zone gets a lane from its
+// entrance to its door, plus a cross lane to the gates and objective sites, so obstacles can never
+// cut the route. The zones' layout goes along as metadata.
+const clearSolid = (g, x, y, w, h) => {
+  for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) {
+    if (SOLID_CHARS.has(g[yy]?.[xx])) g[yy][xx] = '.';
+  }
+};
+
+function makeRun(o) {
+  const zw = 30, H = 24, n = o.zones;
+  const W = n * zw + (n - 1) * 2 + 2;
+  const g = grid(W, H, o.floor || '.'), rnd = seeded(o.seed);
+  for (let i = 0; i < W * H / 22; i++) rect(g, sRange(rnd, 0, W), sRange(rnd, 0, H), sInt(rnd, 1, 4), sInt(rnd, 1, 3), o.floor === ',' ? '.' : ',');
+  border(g);
+  const zones = [];
+  let entryY = half(H);
+  for (let i = 0; i < n; i++) {
+    const x0 = 1 + i * (zw + 2), x1 = x0 + zw - 1, mid = x0 + half(zw);
+    const exitY = sInt(rnd, 7, H - 8);
+    o.style(g, rnd, x0, x1, H);
+    // the guaranteed lanes
+    clearSolid(g, x0, entryY - 1, mid - x0 + 2, 3);
+    clearSolid(g, mid - 1, 1, 3, H - 2);
+    clearSolid(g, mid, exitY - 2, x1 - mid + 1, 5);
+    // objective sites: left of centre, the two far corners, right of centre
+    const anchors = [[x0 + 8, entryY], [x1 - 7, 6], [x1 - 7, H - 7], [x0 + 21, exitY], [x0 + 6, H - 6], [x0 + 6, 5]];
+    for (const [ax, ay] of anchors) {
+      clearSolid(g, ax - 2, ay - 2, 5, 5);
+      clearSolid(g, Math.min(ax, mid), ay - 1, Math.abs(ax - mid) + 1, 3);
+    }
+    if (i < n - 1) {
+      rect(g, x1 + 1, 0, 2, H, '#');
+      rect(g, x1 + 1, exitY - 2, 2, 5, 'D');
+    }
+    rect(g, mid - 2, 0, 4, 2, 'S');
+    rect(g, mid - 2, H - 2, 4, 2, 'S');
+    clearSolid(g, x0, entryY - 2, 4, 5);
+    zones.push({ x0, x1, name: o.names[i], entry: [x0 + 2, entryY], exit: [x1 - 3, exitY], anchors,
+      door: i < n - 1 ? { x: x1 + 1, y: exitY - 2, w: 2, h: 5 } : null });
+    entryY = exitY;
+  }
+  rect(g, zones[0].entry[0], zones[0].entry[1] - 1, 2, 2, 'P');
+  g.zones = zones;
+  return g;
+}
+
+// obstacle styles for makeRun
+const styleYard = (g, rnd, x0, x1, H) => {
+  for (let i = 0; i < 18; i++) {
+    const x = sInt(rnd, x0 + 1, x1 - 3), y = sInt(rnd, 3, H - 5);
+    if (i % 4 === 0) { rect(g, x, y, sInt(rnd, 2, 4), 1, '#'); rect(g, x, y, 1, sInt(rnd, 2, 3), '#'); }
+    else rect(g, x, y, sInt(rnd, 1, 3), sInt(rnd, 1, 2), 'B');
+  }
+};
+const styleBunker = (g, rnd, x0, x1, H) => {
+  // partition walls that the lanes punch doorways through
+  for (const x of [x0 + 9, x0 + 20]) rect(g, x, 1, 1, H - 2, '#');
+  for (const y of [7, 16]) rect(g, x0, y, x1 - x0 + 1, 1, '#');
+  for (let i = 0; i < 10; i++) rect(g, sInt(rnd, x0 + 1, x1 - 2), sInt(rnd, 2, H - 4), sInt(rnd, 1, 2), 1, 'B');
+};
+const styleTown = (g, rnd, x0, x1, H) => {
+  for (let i = 0; i < 7; i++) rect(g, sInt(rnd, x0 + 1, x1 - 7), sInt(rnd, 2, H - 7), sInt(rnd, 4, 6), sInt(rnd, 3, 4), '#');
+  for (let i = 0; i < 10; i++) rect(g, sInt(rnd, x0 + 1, x1 - 2), sInt(rnd, 2, H - 3), 2, 1, 'B');
+  for (let i = 0; i < 6; i++) g[sInt(rnd, 2, H - 3)][sInt(rnd, x0 + 1, x1 - 1)] = 'T';
+};
+const styleGraves = (g, rnd, x0, x1, H) => {
+  for (let y = 3; y < H - 3; y += 3) for (let x = x0 + 2; x < x1 - 1; x += 3) if (rnd() < 0.55) g[y][x] = 'B';
+  for (let i = 0; i < 2; i++) rect(g, sInt(rnd, x0 + 2, x1 - 6), sInt(rnd, 3, H - 6), 4, 3, '#');
+  for (let i = 0; i < 8; i++) g[sInt(rnd, 2, H - 3)][sInt(rnd, x0 + 1, x1 - 1)] = 'T';
+};
+const styleOrchard = (g, rnd, x0, x1, H) => {
+  for (let y = 3; y < H - 3; y += 4) for (let x = x0 + 2; x < x1 - 1; x += 4) if (rnd() < 0.8) g[y + sInt(rnd, -1, 0)][x + sInt(rnd, -1, 1)] = 'T';
+  for (let i = 0; i < 6; i++) rect(g, sInt(rnd, x0 + 1, x1 - 2), sInt(rnd, 2, H - 3), 2, 1, 'B');
+};
+
 const THEMES = {
   depot: { floor: '#3d3b37', floor2: '#36342f', grid: '#2f2d29', wallTop: '#8a8580', wallFront: '#55514c', crateTop: '#b0834a', crateFront: '#7a5530', tree: '#6f6a64', treeTop: '#9a958d', dark: 0.30, pillar: true, bg: '#151412' },
   crossroads: { floor: '#3a3c40', floor2: '#4b4639', grid: '#303236', wallTop: '#7a4f3c', wallFront: '#4f3328', crateTop: '#6c7f8f', crateFront: '#3f4c57', tree: '#2f5a2a', treeTop: '#4c8a3c', dark: 0.38, pillar: false, roof: true, bg: '#121316' },
@@ -3034,55 +3542,69 @@ const MAPS = {
   bunker: { name: 'Bunker 9', desc: 'Nine concrete rooms joined by tight doors. Hold the chokepoints.', gen: makeBunker },
   orchard: { name: 'Dusk Orchard', desc: 'Fenced orchard at sunset, trees everywhere. Enemies come from all sides.', gen: makeOrchard },
   cemetery: { name: 'Old Cemetery', desc: 'Foggy graveyard with rows of tombstones around a ruined chapel.', gen: makeCemetery },
+  // Breakthrough maps: mission-only, so they stay out of the map picker
+  run_yard: { name: 'Depot Backlot', desc: 'Three yards behind the depot.', hidden: true, theme: 'depot',
+    gen: () => makeRun({ seed: 101, zones: 3, style: styleYard, names: ['Loading Bay', 'Container Row', 'The Back Gate'] }) },
+  run_bunker: { name: 'Bunker Depths', desc: 'Four sealed levels of concrete rooms.', hidden: true, theme: 'bunker',
+    gen: () => makeRun({ seed: 202, zones: 4, style: styleBunker, names: ['Intake', 'Barracks', 'Reactor Hall', 'Exit Shaft'] }) },
+  run_town: { name: 'Main Street', desc: 'A long walk through town.', hidden: true, theme: 'crossroads',
+    gen: () => makeRun({ seed: 303, zones: 4, style: styleTown, names: ['Old Quarter', 'Market', 'Fuel Depot', 'Town Limits'] }) },
+  run_graves: { name: 'The Long Graveyard', desc: 'Row after row of graves.', hidden: true, theme: 'cemetery',
+    gen: () => makeRun({ seed: 404, zones: 4, style: styleGraves, names: ['First Rows', 'Chapel Yard', 'The Crypts', 'Black Gate'] }) },
+  run_orchard: { name: 'Orchard Road', desc: 'Five fields between you and the highway.', hidden: true, theme: 'orchard',
+    gen: () => makeRun({ seed: 505, zones: 5, floor: ',', style: styleOrchard, names: ['Lower Field', 'The Barn', 'Pump House', 'Hive Row', 'The Highway'] }) },
 };
 
 const mapCache = {};
 function getMap(id) {
   if (!MAPS[id]) id = 'depot';
   if (!mapCache[id]) {
-    const rows = MAPS[id].gen().map(r => r.join(''));
-    mapCache[id] = { id, name: MAPS[id].name, desc: MAPS[id].desc, w: rows[0].length, h: rows.length, rows, theme: THEMES[id] };
+    const g = MAPS[id].gen();
+    const rows = g.map(r => r.join(''));
+    mapCache[id] = { id, name: MAPS[id].name, desc: MAPS[id].desc, w: rows[0].length, h: rows.length, rows,
+      theme: THEMES[MAPS[id].theme || id], zones: g.zones || null };
   }
   return mapCache[id];
 }
-const mapList = () => Object.keys(MAPS).map(getMap);
-const isMap = id => Object.prototype.hasOwnProperty.call(MAPS, id);
+const mapList = () => Object.keys(MAPS).filter(id => !MAPS[id].hidden).map(getMap);
+const isMap = id => Object.prototype.hasOwnProperty.call(MAPS, id) && !MAPS[id].hidden;
 
 // =============================================================== weapons ==
 // kind: hit = hitscan bullets, proj = rocket, flame = cone, place = deployable
 const WEAPONS = [
   { id: 'pistol', name: 'Pistol', kind: 'hit', dmg: 26, rate: 0.25, ammo: -1, pellets: 1, spread: 0.03, range: 560, kb: 40, unlock: 0, pickup: 0 },
-  { id: 'smg', name: 'SMG', kind: 'hit', dmg: 13, rate: 0.075, ammo: 300, pellets: 1, spread: 0.10, range: 480, kb: 14, unlock: 400, pickup: 90 },
-  { id: 'shotgun', name: 'Shotgun', kind: 'hit', dmg: 15, rate: 0.72, ammo: 50, pellets: 8, spread: 0.30, range: 300, kb: 26, unlock: 1300, pickup: 14 },
+  { id: 'smg', name: 'SMG', kind: 'hit', dmg: 14, rate: 0.075, ammo: 360, pellets: 1, spread: 0.08, range: 480, kb: 14, unlock: 400, pickup: 110 },
+  { id: 'shotgun', name: 'Shotgun', kind: 'hit', dmg: 20, rate: 0.62, ammo: 56, pellets: 8, spread: 0.2, range: 340, kb: 26, unlock: 1300, pickup: 16 },
   { id: 'barricade', name: 'Barricade', kind: 'place', ammo: 8, rate: 0.3, hp: 450, unlock: 2600, pickup: 3 },
-  { id: 'rifle', name: 'Assault Rifle', kind: 'hit', dmg: 32, rate: 0.11, ammo: 240, pellets: 1, spread: 0.045, range: 660, kb: 22, unlock: 4500, pickup: 60 },
+  { id: 'rifle', name: 'Assault Rifle', kind: 'hit', dmg: 28, rate: 0.11, ammo: 240, pellets: 1, spread: 0.045, range: 660, kb: 22, unlock: 4500, pickup: 60 },
   { id: 'mine', name: 'Mines', kind: 'place', ammo: 8, rate: 0.3, dmg: 300, radius: 105, unlock: 7000, pickup: 3 },
-  { id: 'rail', name: 'Railgun', kind: 'hit', dmg: 200, rate: 0.9, ammo: 30, pellets: 1, spread: 0, range: 1100, kb: 60, pierce: true, unlock: 10500, pickup: 7 },
-  { id: 'flame', name: 'Flamethrower', kind: 'flame', dmg: 7, rate: 0.05, ammo: 400, range: 185, cone: 0.42, unlock: 15000, pickup: 110 },
-  { id: 'rocket', name: 'Rocket Launcher', kind: 'proj', dmg: 280, rate: 0.9, ammo: 20, radius: 125, speed: 640, range: 950, unlock: 21000, pickup: 5 },
+  { id: 'flame', name: 'Flamethrower', kind: 'flame', dmg: 7, rate: 0.05, ammo: 400, range: 185, cone: 0.42, unlock: 10500, pickup: 110 },
+  { id: 'rail', name: 'Railgun', kind: 'hit', dmg: 190, rate: 0.9, ammo: 30, pellets: 1, spread: 0, range: 1100, kb: 60, pierce: true, unlock: 15000, pickup: 8 },
+  { id: 'rocket', name: 'Rocket Launcher', kind: 'proj', dmg: 230, rate: 0.95, ammo: 18, radius: 100, speed: 640, range: 950, unlock: 21000, pickup: 5 },
   { id: 'sentry', name: 'Sentry Gun', kind: 'place', ammo: 3, rate: 0.5, hp: 320, unlock: 28000, pickup: 1 },
 ];
 const W_INDEX = Object.fromEntries(WEAPONS.map((w, i) => [w.id, i]));
 const SENTRY_GUN = { ...WEAPONS[W_INDEX.rifle], dmg: 15, spread: 0.05, kb: 10 };
 
 // Weapon upgrades drop from bosses (and rarely brutes). Each one belongs to the player who
-// picks it up; mods overwrite the weapon's base stats.
+// picks it up. mod overwrites base stats, mul multiplies them, so upgrades stack cleanly.
+// Tune these against the balance lab: an upgrade should be worth about x1.25 to x1.75.
 const UPGRADES = [
-  { w: 'pistol', name: 'Hair Trigger', desc: 'Full-auto pistol', mod: { rate: 0.11 } },
-  { w: 'pistol', name: 'Dual Pistols', desc: 'Two bullets per shot', mod: { pellets: 2, spread: 0.07 } },
-  { w: 'smg', name: 'Drum Mag', desc: 'Double SMG ammo, faster fire', mod: { ammo: 600, rate: 0.06 } },
-  { w: 'smg', name: 'Hot Rounds', desc: 'SMG bullets set undead on fire', mod: { burn: 1.2 } },
-  { w: 'shotgun', name: 'Auto Shotgun', desc: 'Shotgun fires 2x faster', mod: { rate: 0.32 } },
-  { w: 'shotgun', name: 'Long Barrel', desc: 'Shotgun range +70%, 10 pellets', mod: { range: 510, spread: 0.2, pellets: 10 } },
+  { w: 'pistol', name: 'Hair Trigger', desc: 'Pistol fires 35% faster', mul: { rate: 0.74 } },
+  { w: 'pistol', name: 'Dual Pistols', desc: 'Two bullets per shot, each weaker', mod: { pellets: 2, spread: 0.06 }, mul: { dmg: 0.68 } },
+  { w: 'smg', name: 'Drum Mag', desc: 'Double SMG ammo, 25% faster fire', mul: { ammo: 2, rate: 0.8 } },
+  { w: 'smg', name: 'Hot Rounds', desc: 'SMG bullets burn undead and hit 20% harder', mod: { burn: 1.5 }, mul: { dmg: 1.2 } },
+  { w: 'shotgun', name: 'Auto Shotgun', desc: 'Shotgun fires 60% faster', mul: { rate: 0.62 } },
+  { w: 'shotgun', name: 'Long Barrel', desc: 'Shotgun range +50%, tight 10-pellet spread', mod: { spread: 0.16, pellets: 10 }, mul: { range: 1.5 } },
   { w: 'shotgun', name: "Dragon's Breath", desc: 'Incendiary shotgun shells', mod: { burn: 1.6 } },
   { w: 'barricade', name: 'Steel Plating', desc: 'Barricades have 3x health', mod: { hp: 1350 } },
-  { w: 'rifle', name: 'AP Rounds', desc: 'Rifle bullets pierce enemies', mod: { pierce: true } },
-  { w: 'rifle', name: 'Marksman', desc: '+50% rifle damage, tighter spread', mod: { dmg: 48, spread: 0.02 } },
+  { w: 'rifle', name: 'AP Rounds', desc: 'Rifle bullets pierce enemies, 35% less damage', mod: { pierce: true }, mul: { dmg: 0.65 } },
+  { w: 'rifle', name: 'Marksman', desc: '+40% rifle damage, tighter spread', mod: { spread: 0.02 }, mul: { dmg: 1.4 } },
   { w: 'mine', name: 'Big Boom', desc: 'Bigger, deadlier mines', mod: { radius: 160, dmg: 450 } },
-  { w: 'rail', name: 'Capacitor', desc: 'Railgun fires 2x faster', mod: { rate: 0.45 } },
-  { w: 'flame', name: 'Napalm', desc: 'Flamethrower +60% range, wider cone', mod: { range: 300, cone: 0.55 } },
+  { w: 'rail', name: 'Capacitor', desc: 'Railgun fires 60% faster', mul: { rate: 0.62 } },
+  { w: 'flame', name: 'Napalm', desc: 'Flamethrower +30% range, wider cone', mod: { cone: 0.48 }, mul: { range: 1.3 } },
   { w: 'rocket', name: 'Cluster Rockets', desc: 'Rockets scatter bomblets', mod: { cluster: 6 } },
-  { w: 'rocket', name: 'Rapid Launcher', desc: 'Rocket launcher fires 2x faster', mod: { rate: 0.45 } },
+  { w: 'rocket', name: 'Rapid Launcher', desc: 'Rocket launcher fires 60% faster', mul: { rate: 0.62 } },
   { w: 'sentry', name: 'Heavy Sentry', desc: 'Sentries last 2x longer and hit harder', mod: { life: 120, sdmg: 26 } },
 ];
 
@@ -3090,10 +3612,38 @@ const UPGRADES = [
 function weaponStats(mask) {
   return WEAPONS.map(w => {
     const s = { ...w };
-    UPGRADES.forEach((u, i) => { if (mask >> i & 1 && u.w === w.id) Object.assign(s, u.mod); });
+    UPGRADES.forEach((u, i) => {
+      if (!(mask >> i & 1) || u.w !== w.id) return;
+      Object.assign(s, u.mod);
+      for (const k in u.mul) s[k] *= u.mul[k];
+    });
     return s;
   });
 }
+
+// Final weapon stats for an upgrade mask and perk ranks. The game and the balance lab both use this.
+function loadoutStats(mask, ranks = {}) {
+  // Trigger Finger also grows magazines by the same amount. Without that, faster fire only empties a gun
+  // sooner, and the one weapon that truly profits is the infinite-ammo pistol.
+  const tf = 1 + 0.12 * (ranks.trigger || 0), dm = 1 + 0.15 * (ranks.guns || 0), rm = 1 / tf;
+  const am = (1 + 0.5 * (ranks.pockets || 0)) * tf, ex = 1 + 0.25 * (ranks.demo || 0);
+  return weaponStats(mask).map(w => {
+    if (w.dmg) w.dmg *= dm;
+    w.rate *= rm;
+    if (w.ammo > 0) w.ammo = Math.round(w.ammo * am);
+    w.pickup = Math.round(w.pickup * am);
+    if (w.radius) { w.radius *= ex; w.dmg *= ex; }
+    if (w.id === 'sentry') w.sdmg = (w.sdmg || SENTRY_GUN.dmg) * dm;
+    return w;
+  });
+}
+
+// Host option: how much of a weapon's damage reaches teammates (and yourself, for explosives).
+const FRIENDLY_FIRE = {
+  off: { name: 'Off', mult: 0, desc: 'Bullets pass through teammates and your own explosives are safe.' },
+  light: { name: 'Light', mult: 0.25, desc: 'Teammates stop your bullets and take 25% damage. Your own explosives hurt you too. Sentries never hit friends.' },
+  full: { name: 'Full', mult: 1, desc: 'Teammates stop your bullets and take full damage. A careless rocket can wipe the team. Sentries never hit friends.' },
+};
 
 const DIFFICULTY = {
   easy: { name: 'Easy', hp: 0.7, speed: 0.85, dmg: 0.6, count: 0.75, drops: 1.4 },
@@ -3106,7 +3656,7 @@ const DIFFICULTY = {
 const MODES = {
   classic: { name: 'Classic', desc: 'Endless waves. Unlock the arsenal and hold out as long as you can.' },
   gauntlet: { name: 'Gauntlet', desc: 'Endless waves, but every wave you pick a perk, waves get random mutators and elite undead show up early.' },
-  missions: { name: 'Missions', desc: 'A campaign of 10 levels with objectives. Clear one to unlock the next. Perks every wave.' },
+  missions: { name: 'Missions', desc: 'Two campaigns with objectives: hold the line in Siege, or fight your way across the map in Breakthrough. Clear one to unlock the next.' },
 };
 
 // Perks: picked from three random offers after every wave (Gauntlet and Missions). Ranks stack up to max.
@@ -3114,7 +3664,7 @@ const PERKS = [
   { id: 'tough', name: 'Toughness', desc: '+25 max health', max: 3, icon: '♥', color: '#e8423f' },
   { id: 'feet', name: 'Quick Feet', desc: '+10% move speed', max: 3, icon: '»', color: '#5fb0ff' },
   { id: 'guns', name: 'Big Guns', desc: '+15% weapon damage', max: 5, icon: '✸', color: '#f2873a' },
-  { id: 'trigger', name: 'Trigger Finger', desc: '+12% fire rate', max: 3, icon: '↯', color: '#f2c230' },
+  { id: 'trigger', name: 'Trigger Finger', desc: '+12% fire rate and max ammo', max: 3, icon: '↯', color: '#f2c230' },
   { id: 'pockets', name: 'Deep Pockets', desc: '+50% max ammo and ammo pickups', max: 2, icon: '▤', color: '#c8b070' },
   { id: 'vamp', name: 'Vampire', desc: 'Heal 1 HP for every kill', max: 3, icon: '✚', color: '#d04a7a' },
   { id: 'medic', name: 'Field Medic', desc: 'Revive teammates 2x faster, bleed out 10s slower', max: 1, icon: '+', color: '#7fff8f' },
@@ -3142,6 +3692,7 @@ const MUTATORS = [
 // goal types: waves (clear n waves), defend (keep the generator alive for n waves),
 // collect (pick up n fuel cans), holdout (survive secs seconds).
 // start: team score to begin with (pre-unlocks weapons), lvl: how far into the threat curve it starts.
+const CHAPTERS = { 1: 'Siege', 2: 'Breakthrough' };
 const MISSIONS = [
   { name: 'First Night', map: 'depot', goal: { type: 'waves', n: 5 }, foes: ['shambler', 'sprinter'], start: 0, lvl: 0,
     desc: 'Survive 5 waves at the depot. A gentle start.' },
@@ -3163,14 +3714,59 @@ const MISSIONS = [
     desc: 'Recover 8 fuel cans while shamans keep the horde alive.' },
   { name: 'Last Stand', map: 'crossroads', goal: { type: 'waves', n: 10 }, foes: null, boss: { 5: ['colossus'], 10: ['colossus', 'juggernaut'] }, start: 15000, lvl: 10,
     desc: 'Ten waves, every kind of undead, and both bosses at the end.' },
+
+  // --- Chapter 2: Breakthrough. Start on the left of a long map and fight zone by zone to the far right.
+  // Each zone's tasks run in order; finishing the last one opens the blast door to the next zone.
+  // Tasks: clear, nests (n), hack (n, secs), fuel (n), hold (secs), charge (secs), fix (secs),
+  // boss (bosses), extract. press scales the undead stream during a task.
+  { chapter: 2, name: 'Breach', map: 'run_yard', start: 1300, lvl: 1, foes: ['shambler', 'sprinter', 'bloater'],
+    desc: 'Clear the yard, burn out the nests, hack the back gate and get to the extraction point.',
+    zones: [
+      { tasks: [{ type: 'clear', mult: 2.4 }] },
+      { tasks: [{ type: 'nests', n: 3 }] },
+      { tasks: [{ type: 'hack', n: 1, secs: 22 }, { type: 'extract' }] },
+    ] },
+  { chapter: 2, name: 'Dr. Block', map: 'run_bunker', start: 2600, lvl: 3, vip: true, foes: ['shambler', 'sprinter', 'leaper', 'spitter'],
+    desc: 'Escort Dr. Block through the bunker. The doors only open for them, and the undead want them dead. If Dr. Block bleeds out, it is over.',
+    zones: [
+      { tasks: [{ type: 'clear', mult: 1.5 }, { type: 'fix', secs: 20 }] },
+      { tasks: [{ type: 'hack', n: 1, secs: 18 }, { type: 'fix', secs: 22 }] },
+      { tasks: [{ type: 'nests', n: 3 }, { type: 'fix', secs: 25 }] },
+      { tasks: [{ type: 'hold', secs: 30 }, { type: 'extract', press: 1.25 }] },
+    ] },
+  { chapter: 2, name: 'Fuel Line', map: 'run_town', start: 4500, lvl: 4, foes: ['shambler', 'sprinter', 'warlock', 'riot', 'bloater'],
+    desc: 'Haul fuel by hand (no big guns while you carry), hack the locks, guard the breach charge, then stop the Juggernaut.',
+    zones: [
+      { tasks: [{ type: 'fuel', n: 3, press: 1.2 }] },
+      { tasks: [{ type: 'hack', n: 2, secs: 16 }] },
+      { tasks: [{ type: 'charge', secs: 55 }] },
+      { tasks: [{ type: 'boss', bosses: ['juggernaut'] }, { type: 'extract' }] },
+    ] },
+  { chapter: 2, name: 'Consecrate', map: 'run_graves', start: 7000, lvl: 6, foes: ['shambler', 'warlock', 'shaman', 'wraith', 'splitter'],
+    desc: 'Burn the nests, keep the bells ringing by holding their circles, then face the Colossus at the black gate.',
+    zones: [
+      { tasks: [{ type: 'nests', n: 4 }] },
+      { tasks: [{ type: 'hold', secs: 35 }, { type: 'hold', secs: 35 }] },
+      { tasks: [{ type: 'clear', mult: 1.6 }] },
+      { tasks: [{ type: 'boss', bosses: ['colossus'] }, { type: 'extract' }] },
+    ] },
+  { chapter: 2, name: 'The Long Way Home', map: 'run_orchard', start: 10500, lvl: 8, vip: true, foes: null, mut: ['swift'],
+    desc: 'Five zones, every undead, one fragile scientist. Fuel, nests, a last stand on the highway with both bosses.',
+    zones: [
+      { tasks: [{ type: 'clear', mult: 1.2 }, { type: 'fix', secs: 20 }] },
+      { tasks: [{ type: 'fuel', n: 3 }, { type: 'fix', secs: 20 }] },
+      { tasks: [{ type: 'hold', secs: 35 }, { type: 'fix', secs: 22 }] },
+      { tasks: [{ type: 'nests', n: 4 }, { type: 'fix', secs: 25 }] },
+      { tasks: [{ type: 'boss', bosses: ['colossus', 'juggernaut'] }, { type: 'extract', press: 1.25 }] },
+    ] },
 ];
 
 // =============================================================== enemies ==
 // Index order is the network type id; never reorder, only append.
 const ENEMY_TYPES = ['shambler', 'sprinter', 'brute', 'warlock', 'bloater', 'colossus',
-  'leaper', 'spitter', 'riot', 'shaman', 'splitter', 'wraith', 'juggernaut', 'splitling'];
+  'leaper', 'spitter', 'riot', 'shaman', 'splitter', 'wraith', 'juggernaut', 'splitling', 'nest'];
 const BOSSES = ['colossus', 'juggernaut'];
-const FOE_TYPES = ENEMY_TYPES.filter(t => t !== 'splitling');   // the ones the host can toggle
+const FOE_TYPES = ENEMY_TYPES.filter(t => t !== 'splitling' && t !== 'nest');   // the ones the host can toggle
 const ENEMIES = {
   shambler: { hp: 55, speed: 56, r: 12, dmg: 10, rate: 0.9, score: 10 },
   sprinter: { hp: 32, speed: 118, r: 10, dmg: 7, rate: 0.6, score: 15 },
@@ -3186,6 +3782,7 @@ const ENEMIES = {
   wraith: { hp: 42, speed: 76, r: 11, dmg: 9, rate: 0.8, score: 30 },
   juggernaut: { hp: 3200, speed: 48, r: 26, dmg: 34, rate: 1.2, score: 800, kbres: 0.03 },
   splitling: { hp: 24, speed: 105, r: 8, dmg: 5, rate: 0.6, score: 5 },
+  nest: { hp: 900, speed: 0, r: 20, dmg: 0, rate: 1, score: 120, kbres: 0 },
 };
 const REGULAR = FOE_TYPES.filter(t => !BOSSES.includes(t));
 // [type, first wave, base weight, weight per wave] for the endless modes
@@ -3251,6 +3848,13 @@ class Player {
     this.offer = null; this.picks = 0;   // current perk offer (3 PERKS indices) and how many picks are owed
     this.hurtT = 0; this.windReady = true; this.autoRev = 0;
     this.dirty = true;                   // private stats changed: resend weapon stats / perks
+    this.use = false; this.useT = 0;     // interact key held, and how long on the current dismantle
+    this.useK = 0; this.usePct = 0;      // what the key would do right now (0 none, 1 dismantle, 2 hack, 3 drop) and progress
+    this.busy = false;                   // hands full with a terminal or a dismantle: can't fire
+    this.carry = false; this.noPick = 0; // hauling a fuel can; pause before grabbing one again
+    this.sealed = false;                 // walled in: no walkable route from the undead gates
+    this.ffDealt = 0;
+    this.isVip = false;
   }
   get mult() { return Math.min(10, 1 + Math.floor(this.combo / 4)); }
   rank(id) { return this.perks[PERK[id]]; }
@@ -3288,12 +3892,14 @@ class Game {
     this.map = m;
     this.diffId = DIFFICULTY[opts.diff] ? opts.diff : 'normal';
     this.diff = DIFFICULTY[this.diffId];
+    this.ffId = FRIENDLY_FIRE[opts.ff] ? opts.ff : 'off';
+    this.ffMult = FRIENDLY_FIRE[this.ffId].mult;
     const foes = this.mission ? this.mission.foes || REGULAR : opts.foes || FOE_TYPES;
     this.foes = new Set(foes.filter(t => FOE_TYPES.includes(t)));
     if (!REGULAR.some(t => this.foes.has(t))) this.foes.add('shambler');
     this.perksOn = this.mode !== 'classic';
     this.mutators = [];               // MUTATORS ids active this wave
-    this.goal = this.mission ? this.mission.goal : null;
+    this.goal = this.mission ? this.mission.goal || { type: 'run' } : null;
     this.goalV = 0;                   // collect: cans found, holdout: seconds survived
     this.won = false;
     this.lost = '';                   // reason the mission failed, if not a wipe
@@ -3328,7 +3934,21 @@ class Game {
     this.fieldCd = 0;
     this.over = false;
     this.totalKills = 0;
-    if (this.mission) this.setupMission();
+    this.stopped = false;           // the host ended the round by hand
+    this.sealCd = 0;
+    this.siege = 0;                 // seconds the team has been walled in: undead break structures faster
+    // Breakthrough
+    this.run = !!(this.mission && this.mission.zones);
+    this.zones = null; this.zoneI = 0;
+    this.taskI = -1; this.task = null;
+    this.sites = [];                // current objective spots: { kind, x, y, r, prog, need }
+    this.doorMask = 0;              // bit i: the door out of zone i is open
+    this.fogMask = 0;
+    this.nestIds = new Set();
+    this.bossIds = new Set();
+    this.vip = null; this.vipField = null; this.vipCd = 0;
+    if (this.run) this.setupRun();
+    else if (this.mission) this.setupMission();
   }
 
   setupMission() {
@@ -3432,17 +4052,22 @@ class Game {
   }
 
   alivePlayers() { return [...this.players.values()].filter(p => p.state === 'alive'); }
+  // real players: everyone except the escort NPC
+  humans() { return [...this.players.values()].filter(p => !p.isVip); }
+  humanCount() { return Math.max(1, this.players.size - (this.vip ? 1 : 0)); }
 
   // ----------------------------------------------------------- players --
   addPlayer(id, name, color) {
     const p = new Player(id, name, color);
     WEAPONS.forEach((w, i) => { if (i && this.unlocked >> i & 1) p.ammo[i] = Math.floor(w.ammo / 2); });
     this.players.set(id, p);
-    if (this.waveState === 'break' || !this.alivePlayers().length) this.respawn(p);
+    if (this.waveState === 'break' || !this.humans().some(q => q.state === 'alive')) this.respawn(p);
     return p;
   }
 
   removePlayer(id) {
+    const p = this.players.get(id);
+    if (p) this.dropCarry(p);
     this.players.delete(id);
     this.checkOver();
   }
@@ -3462,21 +4087,11 @@ class Game {
   // ------------------------------------------------------------- perks --
   // weapon stats, health and speed from upgrades + perks
   applyPerks(p) {
-    const dm = 1 + 0.15 * p.rank('guns'), rm = 1 / (1 + 0.12 * p.rank('trigger'));
-    const am = 1 + 0.5 * p.rank('pockets'), ex = 1 + 0.25 * p.rank('demo');
-    p.ws = weaponStats(p.ups).map(w => {
-      if (w.dmg) w.dmg *= dm;
-      w.rate *= rm;
-      if (w.ammo > 0) w.ammo = Math.round(w.ammo * am);
-      w.pickup = Math.round(w.pickup * am);
-      if (w.radius) { w.radius *= ex; w.dmg *= ex; }
-      if (w.id === 'sentry') w.sdmg = (w.sdmg || SENTRY_GUN.dmg) * dm;
-      return w;
-    });
+    p.ws = loadoutStats(p.ups, { guns: p.rank('guns'), trigger: p.rank('trigger'), pockets: p.rank('pockets'), demo: p.rank('demo') });
     const was = p.maxhp;
     p.maxhp = PLAYER_HP + 25 * p.rank('tough');
     if (p.maxhp > was && p.state === 'alive') p.hp += p.maxhp - was;
-    p.speed = PLAYER_SPEED * (1 + 0.1 * p.rank('feet'));
+    p.speed = PLAYER_SPEED * (1 + 0.1 * p.rank('feet')) * (p.carry ? CARRY_SPEED : 1);
     p.comboMax = COMBO_TIME + p.rank('combo');
     p.dirty = true;
   }
@@ -3497,7 +4112,7 @@ class Game {
 
   choosePerk(id, i) {
     const p = this.players.get(id);
-    if (!p || !p.offer || !(i >= 0 && i < p.offer.length)) return;
+    if (!p || p.isVip || !p.offer || !(i >= 0 && i < p.offer.length)) return;
     const k = p.offer[i];
     p.perks[k]++;
     p.picks = Math.max(0, p.picks - 1);
@@ -3513,8 +4128,9 @@ class Game {
     const a = Number(m.a);
     if (Number.isFinite(a)) p.angle = a;
     p.trigger = !!m.f;
+    p.use = !!m.i;
     const w = m.w | 0;
-    if (w >= 0 && w < WEAPONS.length && this.unlocked >> w & 1) p.weapon = w;
+    if (w >= 0 && w < WEAPONS.length && this.unlocked >> w & 1) p.weapon = p.carry ? 0 : w;
     const x = Number(m.x), y = Number(m.y);
     const now = performance.now() / 1000;
     const dt = Math.min(0.5, now - p.lastIn);
@@ -3532,7 +4148,8 @@ class Game {
     if (Math.hypot(nx - x, ny - y) > 6) { p.tp = [nx, ny]; p.tpSeq++; }
   }
 
-  hurtPlayer(p, dmg) {
+  // src: the player responsible when this is friendly fire
+  hurtPlayer(p, dmg, src = null) {
     if (p.state !== 'alive') return;
     p.hp -= dmg;
     p.hurtT = 0;
@@ -3544,10 +4161,21 @@ class Game {
       p.rev = 0;
       p.downs++;
       p.trigger = false;
+      p.busy = false;
+      this.dropCarry(p);
       if (p.windReady && p.rank('wind')) { p.windReady = false; p.autoRev = 3; }
-      this.ev('down', p.id);
+      this.ev('down', p.id, src ? src.id : 0);
       this.checkOver();
     }
+  }
+
+  // damage from a teammate's weapon (or your own explosive)
+  friendlyHit(q, dmg, src) {
+    if (q.state !== 'alive') return;
+    const d = dmg * this.ffMult;
+    if (src !== q) src.ffDealt += d;
+    this.ev('ff', src.id, q.id);
+    this.hurtPlayer(q, d, src);
   }
 
   // push a player (they own their position, so this goes out as a correction)
@@ -3559,21 +4187,113 @@ class Game {
   }
 
   checkOver() {
-    if (this.over || !this.players.size || this.alivePlayers().length) return;
-    if ([...this.players.values()].some(p => p.state === 'down' && p.autoRev > 0)) return;
+    const hs = this.humans();
+    if (this.over || !hs.length || hs.some(p => p.state === 'alive')) return;
+    if (hs.some(p => p.state === 'down' && p.autoRev > 0)) return;
     this.over = true;
   }
+
+  // ---------------------------------------------------------- interact --
+  // The interact key does one thing at a time: work a terminal, drop a fuel can, or take apart the
+  // closest structure. Taking things apart is how you get out of a box you built yourself.
+  updateUse(p, dt) {
+    p.busy = false;
+    p.useK = 0;
+    p.usePct = 0;
+    const site = this.sites.find(s => s.kind === 'term' && s.prog < s.need && Math.hypot(s.x - p.x, s.y - p.y) < USE_DIST);
+    if (site) {
+      p.useK = 2;
+      p.usePct = site.prog / site.need;
+      p.useSite = p.use ? site : null;
+      p.busy = p.use;
+      p.useT = 0;
+      return;
+    }
+    p.useSite = null;
+    if (p.carry) {
+      p.useK = 3;
+      if (p.use) { this.dropCarry(p); p.noPick = 1; }
+      return;
+    }
+    let best = null, bd = USE_DIST + 16;
+    for (const s of this.structs.values()) {
+      if (s.type === 3) continue;
+      const d = Math.hypot(s.x - p.x, s.y - p.y);
+      if (d < bd) { best = s; bd = d; }
+    }
+    if (!best) { p.useT = 0; return; }
+    p.useK = 1;
+    if (!p.use) { p.useT = 0; return; }
+    p.busy = true;
+    p.useT += dt;
+    p.usePct = Math.min(1, p.useT / DISMANTLE_TIME);
+    if (p.useT >= DISMANTLE_TIME) {
+      p.useT = 0;
+      this.dismantle(p, best);
+    }
+  }
+
+  dismantle(p, s) {
+    // Hand back the charge only when the structure is as good as new: this forgives a misplaced
+    // block but can't be used to "refresh" a worn barricade or a sentry that is running out.
+    const wi = W_INDEX[['barricade', 'mine', 'sentry'][s.type]];
+    const fresh = s.type === 1 || (s.hp >= s.maxhp * 0.9 && (s.type !== 2 || s.life >= s.lifeMax * 0.9));
+    if (fresh && p.ammo[wi] >= 0) p.ammo[wi] = Math.min(p.ws[wi].ammo, p.ammo[wi] + 1);
+    this.removeStruct(s);
+    this.ev('dm', p.id, s.type, fresh ? 1 : 0);
+  }
+
+  dropCarry(p) {
+    if (!p.carry) return;
+    p.carry = false;
+    this.applyPerks(p);
+    const id = this.newId();
+    const [x, y] = this.collide(p.x, p.y, 8);
+    this.items.set(id, { id, kind: 5, x, y, u: -1, life: Infinity });
+  }
+
+  // Works out who is walled in. Being sealed is allowed (a fort is a fair tactic), but it gets costlier
+  // the longer it lasts: see siegeMult.
+  updateSeal(dt) {
+    this.sealCd -= dt;
+    if (this.sealCd > 0) return;
+    this.sealCd = 0.5;
+    const w = this.w, h = this.h, seen = new Uint8Array(w * h), stack = [];
+    for (const s of this.spawns) {
+      const i = Math.floor(s[1] / T) * w + Math.floor(s[0] / T);
+      if (!seen[i] && !this.solid(i % w, (i - i % w) / w)) { seen[i] = 1; stack.push(i); }
+    }
+    while (stack.length) {
+      const i = stack.pop(), x = i % w, y = (i - x) / w;
+      for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+        if (this.solid(nx, ny)) continue;
+        const j = ny * w + nx;
+        if (!seen[j]) { seen[j] = 1; stack.push(j); }
+      }
+    }
+    let any = false;
+    for (const p of this.players.values()) {
+      if (p.isVip) continue;
+      p.sealed = p.state === 'alive' && !seen[Math.floor(p.y / T) * w + Math.floor(p.x / T)];
+      if (p.sealed) any = true;
+    }
+    this.siege = any ? this.siege + 0.5 : Math.max(0, this.siege - 1);
+  }
+
+  // Undead tear through barricades faster the longer the team sits sealed in: normal for 10s, up to x3 at 30s.
+  siegeMult() { return clamp(1 + (this.siege - 10) / 10, 1, 3); }
 
   // ----------------------------------------------------------- weapons --
   updatePlayer(p, dt) {
     p.shooting = false;
+    if (p.isVip && p.state === 'alive') { this.updateVip(p, dt); return; }
     if (p.comboT > 0) {
       p.comboT -= dt;
       if (p.comboT <= 0) p.combo = 0;
     }
     if (p.state === 'down') {
       p.downT -= dt;
-      const helpers = this.alivePlayers().filter(q => Math.hypot(q.x - p.x, q.y - p.y) < REVIVE_DIST);
+      const helpers = this.alivePlayers().filter(q => !q.isVip && Math.hypot(q.x - p.x, q.y - p.y) < REVIVE_DIST);
       if (p.autoRev > 0) {
         p.autoRev -= dt;
         p.rev = Math.max(p.rev, (1 - p.autoRev / 3) * REVIVE_TIME);
@@ -3602,6 +4322,10 @@ class Game {
         p.state = 'dead';
         p.autoRev = 0;
         this.ev('dead', p.id);
+        if (p.isVip) {
+          this.lost = `${p.name} did not make it.`;
+          this.over = true;
+        }
         this.checkOver();
       }
       return;
@@ -3610,9 +4334,12 @@ class Game {
     p.hurtT += dt;
     const regen = p.rank('regen');
     if (regen && p.hurtT > 3 && p.hp < p.maxhp) p.hp = Math.min(p.maxhp, p.hp + 2 * regen * dt);
+    p.noPick = Math.max(0, p.noPick - dt);
+    this.updateUse(p, dt);
     p.fireCd -= dt;
+    if (p.carry) p.weapon = 0;
     const w = p.ws[p.weapon];
-    while (p.trigger && p.fireCd <= 0) {
+    while (p.trigger && !p.busy && p.fireCd <= 0) {
       if (p.ammo[p.weapon] === 0) break;
       let ok = true;
       if (w.kind === 'hit') this.fireHitscan(p, p.weapon, w);
@@ -3645,12 +4372,23 @@ class Game {
         const perp2 = ex * ex + ey * ey - t * t, rr = e.r + 3;
         if (perp2 <= rr * rr) hits.push([t, e]);
       }
+      // friendly fire: teammates are in the way like anyone else (sentries know who is on their side)
+      if (this.ffMult && !o) {
+        for (const q of this.players.values()) {
+          if (q === p || q.state !== 'alive') continue;
+          const ex = q.x - sx, ey = q.y - sy, t = ex * dx + ey * dy;
+          if (t < 0 || t > wd) continue;
+          const perp2 = ex * ex + ey * ey - t * t, rr = PR + 2;
+          if (perp2 <= rr * rr) hits.push([t, q]);
+        }
+      }
       let end = wd;
       if (hits.length) {
         hits.sort((h1, h2) => h1[0] - h2[0]);
         const struck = w.pierce ? hits : [hits[0]];
         if (!w.pierce) end = Math.max(0, hits[0][0]);
         for (const [, e] of struck) {
+          if (e instanceof Player) { this.friendlyHit(e, w.dmg, p); continue; }
           // riot shields stop bullets from the front (railgun and AP rounds punch through)
           if (e.shield > 0 && !w.pierce && dx * Math.cos(e.angle) + dy * Math.sin(e.angle) < -0.45) {
             e.shield -= w.dmg;
@@ -3676,6 +4414,13 @@ class Game {
       e.burn = 2.2;
       e.burnSrc = p;
       this.damageEnemy(e, w.dmg, p, Math.cos(p.angle) * 6, Math.sin(p.angle) * 6, false);
+    }
+    if (!this.ffMult) return;
+    for (const q of this.alivePlayers()) {
+      if (q === p) continue;
+      const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy);
+      if (d > w.range + PR || (d > PR && angdiff(Math.atan2(dy, dx), p.angle) > w.cone)) continue;
+      if (this.los(p.x, p.y, q.x, q.y)) this.friendlyHit(q, w.dmg, p);
     }
   }
 
@@ -3706,10 +4451,15 @@ class Game {
       if (x0 - e.r < e.x && e.x < x0 + T + e.r && y0 - e.r < e.y && e.y < y0 + T + e.r) return false;
     }
     if (this.rows[ty][tx] === 'S') return false;
+    // objectives stay reachable: no building on top of them
+    const inTile = o => x0 - 8 < o.x && o.x < x0 + T + 8 && y0 - 8 < o.y && o.y < y0 + T + 8;
+    for (const it of this.items.values()) if ((it.kind === 3 || it.kind === 5) && inTile(it)) return false;
+    for (const q of this.sites) if (q.kind !== 'hold' && q.kind !== 'evac' && inTile(q)) return false;
     const id = this.newId();
     const type = w.id === 'barricade' ? 0 : 2;
+    const life = w.life || 60;
     const s = { id, type, x: x0 + T / 2, y: y0 + T / 2, tx, ty, hp: w.hp, maxhp: w.hp, owner: p, a: p.angle, cd: 0,
-      ammo: w.life ? 520 : 260, life: w.life || 60, gun: w.sdmg ? { ...SENTRY_GUN, dmg: w.sdmg } : SENTRY_GUN };
+      ammo: w.life ? 520 : 260, life, lifeMax: life, gun: w.sdmg ? { ...SENTRY_GUN, dmg: w.sdmg } : SENTRY_GUN };
     this.structs.set(id, s);
     this.structAt.set(ty * this.w + tx, s);
     this.fieldCd = 0;
@@ -3733,7 +4483,7 @@ class Game {
     this.ev('sx', s.type, Math.round(s.x), Math.round(s.y));
     if (s === this.gen) {
       this.ev('ex', Math.round(s.x), Math.round(s.y), 140);
-      this.lost = 'The generator was destroyed.';
+      this.lost = this.run ? 'The breach charge was destroyed.' : 'The generator was destroyed.';
       this.over = true;
     }
   }
@@ -3771,7 +4521,10 @@ class Game {
     const r = Math.random() / (this.diff.drops * luck);
     if (BOSSES.includes(e.type)) {
       for (let i = 0; i < 5; i++) this.drop(e.x + rand(-30, 30), e.y + rand(-30, 30), i < 3 ? 0 : 1);
-      this.dropUpgrades(e.x, e.y, Math.max(1, this.players.size), 50);
+      this.dropUpgrades(e.x, e.y, this.humanCount(), 50);
+    } else if (e.type === 'nest') {
+      this.drop(e.x - 14, e.y, 0);
+      if (Math.random() < 0.5) this.drop(e.x + 14, e.y, 1);
     } else if (e.elite) {
       if (Math.random() < 0.12) this.dropUpgrades(e.x, e.y, 1, 0);
       else this.drop(e.x, e.y, Math.random() < 0.6 ? 0 : 1);
@@ -3798,7 +4551,7 @@ class Game {
 
   // an upgrade for an unlocked weapon that some player still lacks, preferring ones not already on the floor
   rollUpgrade(taken) {
-    const players = [...this.players.values()];
+    const players = this.humans();
     const opts = UPGRADES.map((u, i) => i).filter(i => this.unlocked >> W_INDEX[UPGRADES[i].w] & 1 && players.some(p => !(p.ups >> i & 1)));
     const fresh = opts.filter(i => !taken.has(i));
     const pool = fresh.length ? fresh : opts;
@@ -3832,6 +4585,12 @@ class Game {
       }
       for (const s of [...this.structs.values()]) {
         if (s.type !== 1 && Math.hypot(s.x - x, s.y - y) < radius + 16) this.damageStruct(s, dmg);
+      }
+    }
+    if (this.ffMult && src instanceof Player) {
+      for (const q of this.alivePlayers()) {
+        const d = Math.hypot(q.x - x, q.y - y);
+        if (d < radius + PR) this.friendlyHit(q, dmg * (1 - 0.5 * Math.min(1, d / radius)), src);
       }
     }
   }
@@ -3892,7 +4651,10 @@ class Game {
   }
 
   // wave number used for enemy scaling (missions start further along the curve)
-  threatWave() { return this.wave + (this.mission ? Math.floor(this.mission.lvl / 2) : 0); }
+  threatWave() {
+    if (this.run) return 1 + Math.floor(this.mission.lvl / 2) + this.zoneI * 1.5;
+    return this.wave + (this.mission ? Math.floor(this.mission.lvl / 2) : 0);
+  }
 
   eliteChance() {
     const wv = this.threatWave();
@@ -3913,9 +4675,9 @@ class Game {
       [x, y] = choice(far.length ? far : this.spawns);
       x += rand(-10, 10); y += rand(-10, 10);
     }
-    const n = this.players.size;
+    const n = this.humanCount();
     const d = this.diff;
-    const boss = BOSSES.includes(type);
+    const boss = BOSSES.includes(type) || type === 'nest';
     let hpm = d.hp, dmgm = d.dmg, spm = d.speed;
     if (this.hasMut('tough')) hpm *= 1.5;
     if (this.hasMut('swarm')) hpm *= 0.65;
@@ -3948,6 +4710,7 @@ class Game {
         this.damageEnemy(e, 20 * dt, e.burnSrc, 0, 0, false);
         if (!this.enemies.has(e.id)) continue;
       }
+      if (e.type === 'nest') { this.updateNest(e, dt); continue; }
       if (this.hasMut('regen') && e.hp < e.maxhp) e.hp = Math.min(e.maxhp, e.hp + e.maxhp * 0.03 * dt);
       e.atkCd -= dt;
       let target = null, td = 1e9;
@@ -4122,7 +4885,7 @@ class Game {
           e.angle = Math.atan2(nextStruct.y - e.y, nextStruct.x - e.x);
           if (e.atkCd <= 0) {
             e.atkCd = e.rate;
-            this.damageStruct(nextStruct, Math.max(e.dmg, 12));
+            this.damageStruct(nextStruct, Math.max(e.dmg, 12) * this.siegeMult());
             this.ev('bite', e.id);
           }
         }
@@ -4160,9 +4923,12 @@ class Game {
       }
     }
     for (const e of this.enemies.values()) {
-      if (e.type === 'wraith') {   // drifts through walls, but stays inside the map
+      if (e.type === 'nest') { e.x = e.homeX; e.y = e.homeY; }   // rooted to the spot
+      else if (e.type === 'wraith') {   // drifts through walls, but stays inside the map
         e.x = clamp(e.x, T, (this.w - 1) * T);
         e.y = clamp(e.y, T, (this.h - 1) * T);
+        // ...and inside the zones that are open
+        if (this.run) e.x = Math.min(e.x, this.openRight());
       } else [e.x, e.y] = this.collide(e.x, e.y, Math.min(e.r, 15));
     }
   }
@@ -4212,6 +4978,9 @@ class Game {
         if (pr.kind === 0 || pr.kind === 3) { // rocket / bomblet
           let hit = this.solid(tx, ty, false);
           if (!hit) for (const e of this.enemies.values()) if (Math.hypot(e.x - pr.x, e.y - pr.y) < e.r + 6) { hit = true; break; }
+          if (!hit && this.ffMult && pr.kind === 0) {
+            for (const q of this.alivePlayers()) if (q !== pr.owner && Math.hypot(q.x - pr.x, q.y - pr.y) < PR + 6) { hit = true; break; }
+          }
           if (hit) { this.detonate(pr); dead = true; }
         } else if (pr.kind === 4) { // acid glob: lobbed, only walls stop it
           if (this.solid(tx, ty, false)) { pr.x -= pr.vx * dt / 3; pr.y -= pr.vy * dt / 3; dead = true; }
@@ -4241,7 +5010,7 @@ class Game {
     for (let k = 0; k < pr.cluster; k++) {
       const id = this.newId(), a = rand(0, Math.PI * 2), v = rand(140, 260);
       this.projs.set(id, { id, kind: 3, x: bx, y: by, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rand(0.35, 0.6),
-        owner: pr.owner, dmg: 110, radius: 70, cluster: 0 });
+        owner: pr.owner, dmg: pr.dmg * 0.4, radius: pr.radius * 0.6, cluster: 0 });
     }
   }
 
@@ -4286,8 +5055,14 @@ class Game {
       it.life -= dt;
       if (it.life <= 0) { this.items.delete(it.id); continue; }
       for (const p of this.alivePlayers()) {
-        if (Math.hypot(p.x - it.x, p.y - it.y) >= PR + 14) continue;
-        if (it.kind === 3) {
+        if (p.isVip || Math.hypot(p.x - it.x, p.y - it.y) >= PR + 14) continue;
+        if (it.kind === 5) {
+          // fuel for the generator: you carry it there yourself, with only a pistol free
+          if (p.carry || p.noPick > 0) continue;
+          p.carry = true;
+          p.weapon = 0;
+          this.applyPerks(p);
+        } else if (it.kind === 3) {
           this.goalV++;
         } else if (it.kind === 2) {
           if (p.ups >> it.u & 1) continue;
@@ -4330,28 +5105,35 @@ class Game {
     return out;
   }
 
-  startWave() {
-    const wv = ++this.wave;
-    this.mutators = this.rollMutators();
-    const ew = this.threatWave();
-    const n = Math.max(1, this.players.size);
-    const count = Math.floor((10 + ew * 5) * (1 + 0.55 * (n - 1)) * this.diff.count * (this.hasMut('swarm') ? 1.6 : 1));
-    const pool = [];
+  // weighted [type, weight] list for the current threat level
+  foePool() {
+    const ew = this.threatWave(), pool = [];
     for (const [type, from, base, per] of SCHEDULE) {
       // missions bring their whole roster from the start
       if (this.foes.has(type) && (this.mission || ew >= from)) pool.push([type, Math.min(1, base + per * ew)]);
     }
     // only late enemy types selected: let them in from wave 1
     if (!pool.length) for (const type of REGULAR) if (this.foes.has(type)) pool.push([type, 1]);
+    return pool;
+  }
+
+  pickFoe(pool) {
+    let r = Math.random() * pool.reduce((s, p) => s + p[1], 0);
+    for (const [name, wgt] of pool) { r -= wgt; if (r <= 0) return name; }
+    return pool[0][0];
+  }
+
+  startWave() {
+    const wv = ++this.wave;
+    this.mutators = this.rollMutators();
+    const ew = this.threatWave();
+    const n = this.humanCount();
+    const count = Math.floor((10 + ew * 5) * (1 + 0.55 * (n - 1)) * this.diff.count * (this.hasMut('swarm') ? 1.6 : 1));
+    const pool = this.foePool();
     const bosses = this.bossesFor(wv);
     this.bossWave = bosses.length > 0;
     const q = [];
-    for (let i = 0; i < count; i++) {
-      let r = Math.random() * pool.reduce((s, p) => s + p[1], 0);
-      let pick = pool[0][0];
-      for (const [name, wgt] of pool) { r -= wgt; if (r <= 0) { pick = name; break; } }
-      q.push(pick);
-    }
+    for (let i = 0; i < count; i++) q.push(this.pickFoe(pool));
     bosses.forEach((b, k) => q.splice(Math.floor(q.length / 3) + k * 5, 0, b));
     this.queue = q;
     this.waveState = 'fight';
@@ -4378,12 +5160,13 @@ class Game {
     // no boss to drop upgrades: hand them out after every 5th wave instead
     if (this.wave % 5 === 0 && !this.bossWave) {
       const [x, y] = choice(this.pspawns);
-      this.dropUpgrades(x, y, Math.max(1, this.players.size), 70);
+      this.dropUpgrades(x, y, this.humanCount(), 70);
     }
     this.ev('clear', this.wave);
   }
 
   updateWaves(dt) {
+    if (this.run) { this.updateRun(dt); return; }
     if (this.goal && this.goal.type === 'holdout' && this.wave > 0) {
       this.goalV += dt;
       if (this.goalV >= this.goal.secs) { this.win(); return; }
@@ -4393,7 +5176,7 @@ class Game {
       if (this.timer <= 0) this.startWave();
       return;
     }
-    const n = Math.max(1, this.players.size);
+    const n = this.humanCount();
     const maxAlive = Math.min(95, 35 + 12 * n);
     this.spawnCd -= dt;
     if (this.queue.length && this.spawnCd <= 0 && this.enemies.size < maxAlive) {
@@ -4402,6 +5185,355 @@ class Game {
       this.spawnCd = Math.max(0.35, 1.6 - this.wave * 0.07) / (1 + 0.35 * (n - 1));
     }
     if (!this.queue.length && !this.enemies.size) this.endWave();
+  }
+
+  // ------------------------------------------------------- breakthrough --
+  setupRun() {
+    const ms = this.mission;
+    this.score = ms.start;
+    WEAPONS.forEach((w, i) => { if (ms.start >= w.unlock) this.unlocked |= 1 << i; });
+    this.zones = this.map.zones.map((z, i) => ({ ...z, ...ms.zones[i] }));
+    this.allSpawns = this.spawns;
+    this.spawns = this.spawnsIn(0);
+    this.setEntry(0);
+    this.mutators = [...(ms.mut || [])];
+    this.waveState = 'break';
+    this.timer = 6;
+    if (ms.vip) {
+      const p = new Player(VIP_ID, 'Dr. Block', '#f2efe6');
+      p.isVip = true;
+      p.maxhp = p.hp = VIP_HP;
+      this.players.set(VIP_ID, p);
+      this.vip = p;
+      this.respawn(p);
+    }
+  }
+
+  spawnsIn(i) {
+    const z = this.map.zones[i];
+    return this.allSpawns.filter(s => s[0] >= z.x0 * T && s[0] < (z.x1 + 1) * T);
+  }
+
+  // respawn point: just inside the given zone
+  setEntry(i) {
+    const [ex, ey] = this.map.zones[i].entry;
+    this.pspawns = [[(ex + 0.5) * T, (ey + 0.5) * T], [(ex + 0.5) * T, (ey - 0.5) * T], [(ex + 1.5) * T, (ey + 0.5) * T]];
+  }
+
+  // right edge of the part of the map that is open
+  openRight() { return (this.zones[this.zoneI].x1 + 1) * T; }
+
+  // the next task's site: a free objective spot in this zone
+  site(i) {
+    const a = this.zones[this.zoneI].anchors;
+    const [x, y] = a[i % a.length];
+    return [(x + 0.5) * T, (y + 0.5) * T];
+  }
+
+  beginZone() {
+    this.wave = this.zoneI + 1;
+    this.waveState = 'fight';
+    this.spawns = this.spawnsIn(this.zoneI);
+    this.setEntry(this.zoneI);
+    this.queue = [];
+    this.spawnCd = 1.5;
+    this.taskI = -1;
+    this.ev('zone', this.zoneI, this.zones[this.zoneI].name);
+    this.nextTask();
+  }
+
+  nextTask() {
+    const z = this.zones[this.zoneI];
+    this.taskI++;
+    this.sites = [];
+    this.task = z.tasks[this.taskI] || null;
+    if (!this.task) { this.finishZone(); return; }
+    this.startTask(this.task, z);
+    this.ev('task', this.task.type);
+  }
+
+  startTask(t, z) {
+    const newSite = (kind, x, y, r, need) => {
+      const s = { kind, x, y, r, need, prog: 0 };
+      this.sites.push(s);
+      return s;
+    };
+    switch (t.type) {
+      case 'clear': {
+        const n = this.humanCount(), pool = this.foePool();
+        const count = Math.floor((10 + this.threatWave() * 5) * (1 + 0.55 * (n - 1)) * this.diff.count * (t.mult || 1));
+        for (let i = 0; i < count; i++) this.queue.push(this.pickFoe(pool));
+        break;
+      }
+      case 'nests':
+        for (let i = 0; i < t.n; i++) {
+          const [x, y] = this.site(i + 1);
+          const e = this.spawnEnemy('nest', [x, y], true);
+          e.homeX = x; e.homeY = y;
+          e.special = rand(1, 3);
+          this.nestIds.add(e.id);
+        }
+        break;
+      case 'hack':
+        for (let i = 0; i < t.n; i++) { const [x, y] = this.site(i + 1); newSite('term', x, y, 0, t.secs); }
+        break;
+      case 'fuel': {
+        const [gx, gy] = this.site(3);
+        newSite('gen', gx, gy, 0, t.n);
+        for (let i = 0; i < t.n; i++) {
+          const [x, y] = this.site(i === 2 ? 4 : i + 1);
+          const id = this.newId();
+          this.items.set(id, { id, kind: 5, x, y, u: -1, life: Infinity });
+        }
+        break;
+      }
+      case 'hold': {
+        const [x, y] = this.site(this.taskI);
+        newSite('hold', x, y, 96, t.secs);
+        break;
+      }
+      case 'charge': {
+        const dr = z.door;
+        const tx = dr.x - 3, ty = dr.y + 2, id = this.newId(), hp = 2600;
+        this.gen = { id, type: 3, x: tx * T + T / 2, y: ty * T + T / 2, tx, ty, hp, maxhp: hp, owner: null, a: 0 };
+        this.structs.set(id, this.gen);
+        this.structAt.set(ty * this.w + tx, this.gen);
+        newSite('charge', this.gen.x, this.gen.y, 0, t.secs);
+        break;
+      }
+      case 'fix': {
+        const dr = z.door;
+        newSite('fix', (dr.x - 1) * T, (dr.y + 2.5) * T, 0, t.secs);
+        break;
+      }
+      case 'boss':
+        this.bossIds.clear();
+        for (const b of t.bosses) {
+          const [x, y] = choice(this.spawns);
+          const e = this.spawnEnemy(b, [x, y]);
+          this.bossIds.add(e.id);
+        }
+        this.bossWave = true;
+        this.ev('wave', this.wave, t.bosses.map(b => ENEMY_TYPES.indexOf(b)), []);
+        break;
+      case 'extract': {
+        const [ex, ey] = z.exit;
+        newSite('evac', (ex + 0.5) * T, (ey + 0.5) * T, 110, 10);
+        break;
+      }
+    }
+  }
+
+  finishZone() {
+    this.sites = [];
+    this.queue = [];
+    this.task = null;
+    if (this.zoneI >= this.zones.length - 1) { this.win(); return; }
+    this.openDoor(this.zoneI);
+    const dr = this.zones[this.zoneI].door;
+    // supplies at the door, then a breather: everyone is back up and gets a perk
+    const sx = (dr.x - 2) * T, sy = (dr.y + 2.5) * T;
+    this.drop(sx, sy - 30, 0);
+    this.drop(sx, sy + 30, 1);
+    if (this.zoneI % 2 === 1 && !this.bossWave) this.dropUpgrades(sx - 40, sy, this.humanCount(), 40);
+    this.bossWave = false;
+    // During the breather the fallen come back on this side of the door. Respawning them beyond it would
+    // count as walking through and wake the next zone straight away.
+    const [ex, ey] = this.zones[this.zoneI].exit;
+    this.pspawns = [[(ex + 0.5) * T, (ey + 0.5) * T], [(ex + 0.5) * T, (ey - 0.5) * T], [(ex - 0.5) * T, (ey + 0.5) * T]];
+    this.zoneI++;
+    this.waveState = 'break';
+    this.timer = 45;
+    for (const p of this.players.values()) {
+      if (p.isVip) {
+        if (p.state !== 'alive') this.respawn(p);
+        p.hp = p.maxhp;
+        continue;
+      }
+      if (p.state !== 'alive') { this.respawn(p); p.hp = Math.min(p.maxhp, 70); } else p.hp = Math.min(p.maxhp, p.hp + 25);
+      p.windReady = true;
+      this.offerPerk(p);
+    }
+    this.ev('zclr', this.zoneI);
+  }
+
+  openDoor(i) {
+    const d = this.zones[i].door;
+    for (let y = d.y; y < d.y + d.h; y++) for (let x = d.x; x < d.x + d.w; x++) this.static[y * this.w + x] = 0;
+    this.doorMask |= 1 << i;
+    this.fieldCd = 0;
+    this.vipCd = 0;
+    this.ev('door', i);
+  }
+
+  // A steady stream of undead while the team works on a task, on top of any fixed queue.
+  feed(dt, t) {
+    const n = this.humanCount(), tw = this.threatWave();
+    const maxAlive = Math.min(95, 35 + 12 * n);
+    this.spawnCd -= dt;
+    if (this.spawnCd > 0) return;
+    if (this.queue.length) {
+      if (this.enemies.size >= maxAlive) { this.spawnCd = 0.25; return; }
+      const burst = randint(1, 2 + Math.min(3, Math.floor(tw / 3)));
+      for (let i = 0; i < burst && this.queue.length; i++) this.spawnEnemy(this.queue.shift());
+      this.spawnCd = Math.max(0.35, 1.6 - tw * 0.07) / (1 + 0.35 * (n - 1));
+      return;
+    }
+    if (t.type === 'clear' || t.type === 'nests') return;
+    // a lone hacker can't shoot while working, so ease off a little for them
+    const solo = n === 1 && t.type === 'hack' ? 0.7 : 1;
+    const cap = Math.min(maxAlive, Math.floor((7 + tw * 1.3) * (1 + 0.55 * (n - 1)) * this.diff.count * (t.press || 1) * solo));
+    if (this.enemies.size >= cap) { this.spawnCd = 0.25; return; }
+    const pool = this.foePool();
+    for (let i = randint(1, 2); i > 0; i--) this.spawnEnemy(this.pickFoe(pool));
+    this.spawnCd = Math.max(0.6, 1.7 - tw * 0.06) / (1 + 0.35 * (n - 1));
+  }
+
+  updateNest(e, dt) {
+    e.special -= dt;
+    if (e.special > 0 || this.enemies.size >= Math.min(60, 22 + 10 * this.humanCount())) return;
+    e.special = rand(2.6, 4) / (1 + 0.3 * (this.humanCount() - 1));
+    const pool = this.foePool();
+    for (let i = randint(1, 2); i > 0; i--) {
+      const m = this.spawnEnemy(this.pickFoe(pool), [e.x, e.y], true);
+      const a = rand(0, Math.PI * 2);
+      [m.x, m.y] = this.collide(e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26, m.r);
+    }
+    this.ev('sum', Math.round(e.x), Math.round(e.y));
+  }
+
+  taskDone(t, dt) {
+    const hs = this.humans().filter(p => p.state === 'alive');
+    switch (t.type) {
+      case 'clear': return !this.queue.length && !this.enemies.size;
+      case 'nests':
+        for (const id of this.nestIds) if (!this.enemies.has(id)) this.nestIds.delete(id);
+        return !this.nestIds.size;
+      case 'hack':
+        for (const s of this.sites) {
+          const workers = hs.filter(p => p.useSite === s).length;
+          // alone there is nobody to cover you, so the job goes faster
+          const rate = this.humanCount() === 1 ? 1.5 : 1 + 0.5 * (workers - 1);
+          if (workers) s.prog = Math.min(s.need, s.prog + dt * rate);
+          else if (s.prog < s.need) s.prog = Math.max(0, s.prog - dt * 0.2);
+          if (s.prog >= s.need && !s.done) { s.done = true; this.ev('task_ok', Math.round(s.x), Math.round(s.y)); }
+        }
+        return this.sites.every(s => s.prog >= s.need);
+      case 'fuel': {
+        const g = this.sites[0];
+        for (const p of hs) {
+          if (p.carry && Math.hypot(p.x - g.x, p.y - g.y) < 60) {
+            p.carry = false;
+            this.applyPerks(p);
+            g.prog++;
+            this.ev('task_ok', Math.round(g.x), Math.round(g.y));
+          }
+        }
+        return g.prog >= g.need;
+      }
+      case 'hold': {
+        const s = this.sites[0];
+        const inside = hs.some(p => Math.hypot(p.x - s.x, p.y - s.y) < s.r);
+        s.prog = inside ? s.prog + dt : Math.max(0, s.prog - dt * 0.3);
+        return s.prog >= s.need;
+      }
+      case 'charge': {
+        const s = this.sites[0];
+        s.prog += dt;
+        if (s.prog < s.need) return false;
+        const g = this.gen;
+        this.gen = null;
+        this.removeStruct(g);
+        this.ev('ex', Math.round(g.x), Math.round(g.y), 140);
+        return true;
+      }
+      case 'fix': {
+        const s = this.sites[0], v = this.vip;
+        if (v.state === 'alive' && Math.hypot(v.x - s.x, v.y - s.y) < 40) {
+          let safe = true;
+          for (const e of this.enemies.values()) if (Math.hypot(e.x - v.x, e.y - v.y) < e.r + 34) { safe = false; break; }
+          s.stalled = !safe;
+          if (safe) s.prog += dt;
+        }
+        return s.prog >= s.need;
+      }
+      case 'boss':
+        for (const id of this.bossIds) if (!this.enemies.has(id)) this.bossIds.delete(id);
+        return !this.bossIds.size;
+      case 'extract': {
+        const s = this.sites[0];
+        const out = p => Math.hypot(p.x - s.x, p.y - s.y) > s.r;
+        const ready = hs.length && !hs.some(out) && (!this.vip || (this.vip.state === 'alive' && !out(this.vip)));
+        s.prog = ready ? s.prog + dt : Math.max(0, s.prog - dt);
+        return s.prog >= s.need;
+      }
+    }
+    return true;
+  }
+
+  updateRun(dt) {
+    if (this.waveState === 'break') {
+      this.timer -= dt;
+      // the team sets the pace: the next zone wakes up when someone walks through the door
+      const z = this.zones[this.zoneI];
+      const crossed = this.zoneI > 0 && this.humans().some(p => p.state === 'alive' && p.x > (z.x0 + 1) * T);
+      if (this.timer <= 0 || crossed) this.beginZone();
+      return;
+    }
+    if (!this.task) return;
+    this.feed(dt, this.task);
+    if (this.taskDone(this.task, dt)) this.nextTask();
+  }
+
+  // Dr. Block follows the nearest survivor (or heads for the door they have to fix) along their own
+  // little flow field. They squeeze past barricades, so the team can't trap them by accident.
+  updateVip(p, dt) {
+    const fix = this.task && this.task.type === 'fix' ? this.sites[0] : null;
+    let dest = fix, gap = fix ? 6 : 64;
+    if (!fix) {
+      let bd = 1e9;
+      for (const q of this.humans()) {
+        const d = Math.hypot(q.x - p.x, q.y - p.y);
+        if (q.state === 'alive' && d < bd) { bd = d; dest = q; }
+      }
+    }
+    if (!dest) return;
+    this.vipCd -= dt;
+    if (this.vipCd <= 0 || !this.vipField) { this.vipField = this.flood(dest.x, dest.y); this.vipCd = 0.4; }
+    const dist = Math.hypot(dest.x - p.x, dest.y - p.y);
+    p.shooting = false;
+    if (dist < gap) { p.angle = Math.atan2(dest.y - p.y, dest.x - p.x); return; }
+    const w = this.w, tx = Math.floor(p.x / T), ty = Math.floor(p.y / T), f = this.vipField;
+    let best = f[ty * w + tx], bx = -1, by = -1;
+    for (const [ox, oy] of NEIGH8) {
+      const nx = tx + ox, ny = ty + oy;
+      if (this.solid(nx, ny, false)) continue;
+      if (ox && oy && (this.solid(nx, ty, false) || this.solid(tx, ny, false))) continue;
+      if (f[ny * w + nx] < best) { best = f[ny * w + nx]; bx = nx; by = ny; }
+    }
+    let dx, dy;
+    if (dist < 2 * T) { dx = dest.x - p.x; dy = dest.y - p.y; }
+    else if (bx >= 0) { dx = (bx + 0.5) * T - p.x; dy = (by + 0.5) * T - p.y; }
+    else return;
+    const l = Math.hypot(dx, dy) || 1, step = VIP_SPEED * dt;
+    p.angle = Math.atan2(dy, dx);
+    [p.x, p.y] = this.collide(p.x + dx / l * step, p.y + dy / l * step, PR, false);
+  }
+
+  // walking distance to a point, ignoring structures
+  flood(x, y) {
+    const w = this.w, h = this.h, f = new Float32Array(w * h).fill(1e9), q = [];
+    const s = Math.floor(y / T) * w + Math.floor(x / T);
+    f[s] = 0; q.push(s);
+    for (let qi = 0; qi < q.length; qi++) {
+      const i = q[qi], cx = i % w, cy = (i - cx) / w, d = f[i] + 1;
+      for (const [nx, ny] of [[cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]]) {
+        if (this.solid(nx, ny, false)) continue;
+        const j = ny * w + nx;
+        if (d < f[j]) { f[j] = d; q.push(j); }
+      }
+    }
+    return f;
   }
 
   // -------------------------------------------------------------- tick --
@@ -4417,12 +5549,29 @@ class Game {
     this.updateHazards(dt);
     this.updateItems(dt);
     this.updateWaves(dt);
+    this.updateSeal(dt);
     this.checkOver();
   }
 
   objective() {
     const g = this.goal;
     if (!g) return 0;
+    if (this.run) {
+      const t = this.task, s = this.sites[0];
+      const base = ['run', this.zoneI + 1, this.zones.length, t ? t.type : 'move'];
+      if (!t) return base;
+      switch (t.type) {
+        case 'nests': return [...base, this.nestIds.size, t.n];
+        case 'hack': return [...base, this.sites.filter(q => q.prog >= q.need).length, t.n, Math.round(Math.max(...this.sites.map(q => (q.prog >= q.need ? 0 : q.prog / q.need))) * 100)];
+        case 'fuel': return [...base, s.prog, s.need];
+        case 'hold': return [...base, Math.round(s.prog / s.need * 100)];
+        case 'charge': return [...base, Math.max(0, Math.ceil(s.need - s.prog)), this.gen ? Math.ceil(this.gen.hp / this.gen.maxhp * 100) : 0];
+        case 'fix': return [...base, Math.round(s.prog / s.need * 100), s.stalled ? 1 : 0];
+        case 'boss': return [...base, this.bossIds.size];
+        case 'extract': return [...base, Math.max(0, Math.ceil(s.need - s.prog))];
+      }
+      return base;
+    }
     if (g.type === 'waves') return ['waves', this.wave, g.n];
     if (g.type === 'defend') return ['defend', this.gen ? Math.max(0, Math.ceil(this.gen.hp / this.gen.maxhp * 100)) : 0, g.n, this.wave];
     if (g.type === 'collect') return ['collect', this.goalV, g.n];
@@ -4444,7 +5593,8 @@ class Game {
       mu: this.mutators,
       ob: this.objective(),
       p: [...this.players.values()].map(p => [p.id, r1(p.x), r1(p.y), Math.round(p.angle * 100), Math.ceil(p.hp), p.weapon,
-        st[p.state], Math.round(p.rev / REVIVE_TIME * 100), p.shooting ? 1 : 0, p.mult, Math.round(p.downT), p.kills, p.score, p.maxhp]),
+        st[p.state], Math.round(p.rev / REVIVE_TIME * 100), p.shooting ? 1 : 0, p.mult, Math.round(p.downT), p.kills, p.score, p.maxhp,
+        (p.carry ? 1 : 0) | (p.busy ? 2 : 0)]),
       // flags: 1 elite, 2|4 mode (wind-up / leap / stunned), 8 shield up
       e: [...this.enemies.values()].map(e => [e.id, e.tid, Math.round(e.x), Math.round(e.y), Math.round(e.angle * 10),
         Math.round(Math.max(0, e.hp) / e.maxhp * 100), e.burn > 0 ? 1 : 0, (e.elite ? 1 : 0) | e.mode << 1 | (e.shield > 0 ? 8 : 0)]),
@@ -4452,6 +5602,8 @@ class Game {
       it: [...this.items.values()].map(it => [it.id, it.kind, Math.round(it.x), Math.round(it.y), it.u]),
       st: [...this.structs.values()].map(s => [s.id, s.type, Math.round(s.x), Math.round(s.y), Math.round(s.hp / s.maxhp * 100), Math.round((s.a || 0) * 10)]),
       hz: [...this.hazards.values()].map(h => [h.id, Math.round(h.x), Math.round(h.y), h.r, r1(h.life)]),
+      dm: this.doorMask,
+      zs: this.sites.map(s => [s.kind, Math.round(s.x), Math.round(s.y), s.r, Math.round(Math.min(1, s.prog / s.need) * 100), s.stalled ? 1 : 0]),
       ev: this.events,
     };
   }
@@ -4459,7 +5611,8 @@ class Game {
   snapshotPrivate(id) {
     const p = this.players.get(id);
     if (!p) return {};
-    const me = { am: p.ammo, up: p.ups, k: p.kills, ps: p.score, cb: p.combo, ct: Math.round(Math.max(0, p.comboT) / p.comboMax * 100) };
+    const me = { am: p.ammo, up: p.ups, k: p.kills, ps: p.score, cb: p.combo, ct: Math.round(Math.max(0, p.comboT) / p.comboMax * 100),
+      uk: p.useK, up2: Math.round(p.usePct * 100), bx: p.sealed ? 1 : 0, cr: p.carry ? 1 : 0 };
     if (p.tp) { me.tp = [r1(p.tp[0]), r1(p.tp[1]), p.tpSeq]; p.tp = null; }
     if (p.dirty) {
       p.dirty = false;
@@ -4473,36 +5626,39 @@ class Game {
   }
 
   stats() {
-    return [...this.players.values()].map(p => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, score: p.score,
-      best: p.bestCombo, downs: p.downs, revives: p.revives }));
+    return this.humans().map(p => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, score: p.score,
+      best: p.bestCombo, downs: p.downs, revives: p.revives, ff: Math.round(p.ffDealt) }));
   }
 
   startInfo() {
     const m = this.map;
     return {
       t: 'start',
-      map: { id: m.id, name: m.name, w: m.w, h: m.h, rows: m.rows, theme: m.theme },
+      map: { id: m.id, name: m.name, w: m.w, h: m.h, rows: m.rows, theme: m.theme, zones: m.zones },
       weapons: WEAPONS.map(w => ({ id: w.id, name: w.name, kind: w.kind, ammo: w.ammo, rate: w.rate, unlock: w.unlock })),
-      upgrades: UPGRADES.map(u => ({ w: W_INDEX[u.w], name: u.name, desc: u.desc, rate: u.mod.rate, ammo: u.mod.ammo })),
+      upgrades: UPGRADES.map(u => ({ w: W_INDEX[u.w], name: u.name, desc: u.desc })),
       enemies: ENEMY_TYPES,
       diff: this.diff.name,
       speed: PLAYER_SPEED,
       pr: PR,
       mode: this.mode,
-      mission: this.mission ? { idx: this.missionIdx, name: this.mission.name, desc: this.mission.desc } : null,
+      mission: this.mission ? { idx: this.missionIdx, name: this.mission.name, desc: this.mission.desc,
+        num: this.missionIdx + 1 - MISSIONS.findIndex(m => (m.chapter || 1) === (this.mission.chapter || 1)) } : null,
+      ff: this.ffId,
+      vip: this.vip ? { id: this.vip.id, name: this.vip.name, color: this.vip.color } : null,
       perks: PERKS,
       mutators: MUTATORS,
     };
   }
 }
 
-return { getMap, mapList, isMap, WEAPONS, UPGRADES, weaponStats, DIFFICULTY, MODES, PERKS, MUTATORS, MISSIONS, ENEMY_TYPES, BOSSES, FOE_TYPES, Game };
+return { getMap, mapList, isMap, WEAPONS, UPGRADES, weaponStats, loadoutStats, FRIENDLY_FIRE, DIFFICULTY, MODES, PERKS, MUTATORS, CHAPTERS, MISSIONS, ENEMY_TYPES, BOSSES, FOE_TYPES, Game };
 })();
 // ---- host.js
 __mods['host'] = (() => {
 // The room "server", running inside the host's browser.
 // Clients (the host's own client and remote peers) talk to it with the same JSON messages.
-const { Game, isMap, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS } = __mods['sim'];
+const { Game, isMap, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS, FRIENDLY_FIRE } = __mods['sim'];
 const TICK = 1 / 30;
 const SNAPSHOT_EVERY = 2;     // ticks per snapshot -> 15 Hz
 const MAX_PLAYERS = 8;
@@ -4534,6 +5690,7 @@ class Host {
     this.foes = [...FOE_TYPES];
     this.mode = 'classic';
     this.mission = 0;
+    this.ff = 'off';
     this.paused = false;
     this.clients = new Map();     // id -> { id, name, color, inRoom, sendRaw }
     this.hostId = null;
@@ -4570,7 +5727,7 @@ class Host {
   info() {
     return {
       t: 'room', code: this.code, map: this.mapId, host: this.hostId, state: this.state, diff: this.diff, foes: this.foes,
-      mode: this.mode, mission: this.mission, paused: this.paused,
+      mode: this.mode, mission: this.mission, ff: this.ff, paused: this.paused,
       players: this.members().map(c => ({ id: c.id, name: c.name, color: c.color, char: c.char })),
     };
   }
@@ -4602,7 +5759,7 @@ class Host {
   // ------------------------------------------------------------- game --
   start() {
     if (this.state === 'game') return;
-    this.game = new Game(this.mapId, { diff: this.diff, foes: this.foes, mode: this.mode, mission: this.mission });
+    this.game = new Game(this.mapId, { diff: this.diff, foes: this.foes, mode: this.mode, mission: this.mission, ff: this.ff });
     this.paused = false;
     for (const c of this.members()) this.game.addPlayer(c.id, c.name, c.color);
     this.state = 'game';
@@ -4621,6 +5778,15 @@ class Host {
     this.state = 'lobby';
     this.game = null;
     this.paused = false;
+  }
+
+  // Tell everyone how the round went and go back to the lobby. A round the host stopped by hand is
+  // flagged so it doesn't read as a defeat.
+  finishRound(game, stopped = false) {
+    this.broadcast({ t: 'over', wave: game.wave, score: game.score, kills: game.totalKills, stats: game.stats(),
+      mode: game.mode, mission: game.missionIdx, won: game.won, lost: game.lost, stopped, ff: game.ffId });
+    this.stop();
+    this.broadcast(this.info());
   }
 
   setPaused(on) {
@@ -4656,13 +5822,7 @@ class Host {
         game.tick(TICK);
         this.tickN++;
         if (this.tickN % SNAPSHOT_EVERY === 0 || game.over) this.sendSnapshot(game);
-        if (game.over) {
-          this.broadcast({ t: 'over', wave: game.wave, score: game.score, kills: game.totalKills, stats: game.stats(),
-            mode: game.mode, mission: game.missionIdx, won: game.won, lost: game.lost });
-          this.stop();
-          this.broadcast(this.info());
-          return;
-        }
+        if (game.over) { this.finishRound(game); return; }
       }
     } catch (e) {
       console.error(e);
@@ -4685,7 +5845,20 @@ class Host {
       case 'leave': if (c.inRoom) this.leaveRoom(c); break;
       case 'in': if (c.inRoom && this.game && !this.paused) this.game.handleInput(c.id, m); break;
       case 'perk': if (c.inRoom && this.game) this.game.choosePerk(c.id, m.i | 0); break;
-      case 'pause': if (c.id === this.hostId && this.state === 'game') this.setPaused(!this.paused); break;
+      case 'pause': if (c.id === this.hostId && this.state === 'game') this.setPaused(m.on === undefined ? !this.paused : !!m.on); break;
+      case 'end':
+        if (c.id === this.hostId && this.state === 'game' && this.game) {
+          this.broadcast({ t: 'chat', from: '', text: 'The host ended the round.' });
+          this.finishRound(this.game, true);
+        }
+        break;
+      case 'restart':
+        if (c.id === this.hostId && this.state === 'game' && this.game) {
+          this.stop();
+          this.broadcast({ t: 'chat', from: '', text: 'The host restarted the round.' });
+          this.start();
+        }
+        break;
       case 'map':
         if (c.id === this.hostId && this.state === 'lobby' && isMap(m.map)) {
           this.mapId = m.map;
@@ -4704,6 +5877,7 @@ class Host {
           if (foes.some(t => !BOSSES.includes(t))) this.foes = foes;
         }
         if (Object.prototype.hasOwnProperty.call(MODES, m.mode)) this.mode = m.mode;
+        if (Object.prototype.hasOwnProperty.call(FRIENDLY_FIRE, m.ff)) this.ff = m.ff;
         if (Number.isInteger(m.mission) && m.mission >= 0 && m.mission < MISSIONS.length) this.mission = m.mission;
         this.broadcast(this.info());
         break;
@@ -4730,7 +5904,7 @@ __mods['main'] = (() => {
 const { Renderer, T, CHARS, LOOKS, GUNS } = __mods['render'];
 const { ClientGame } = __mods['game'];
 const { Host } = __mods['host'];
-const { mapList, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS } = __mods['sim'];
+const { mapList, getMap, DIFFICULTY, FOE_TYPES, BOSSES, MODES, MISSIONS, CHAPTERS, FRIENDLY_FIRE } = __mods['sim'];
 const A = __mods['audio'];
 const $ = id => document.getElementById(id);
 const canvas = $('game');
@@ -4773,6 +5947,7 @@ const GOAL_TEXT = {
   collect: g => `Find ${g.n} fuel cans`,
   holdout: g => `Hold out for ${g.secs / 60} minutes`,
 };
+const missionGoal = ms => (ms.zones ? `${ms.zones.length} zones to fight through${ms.vip ? ' · escort Dr. Block' : ''}` : GOAL_TEXT[ms.goal.type](ms.goal));
 
 // local progress: missions cleared (unlocks the next) and best waves in the endless modes
 function loadNum(key) {
@@ -4781,7 +5956,18 @@ function loadNum(key) {
 function saveNum(key, v) {
   try { localStorage.setItem(key, String(v)); } catch (e) { /* ignore */ }
 }
-const missionsCleared = () => Math.min(MISSIONS.length, loadNum('cs_missions'));
+// each chapter unlocks on its own: Breakthrough doesn't wait for the Siege campaign
+const chapterOf = i => MISSIONS[i].chapter || 1;
+const chapterMissions = ch => MISSIONS.map((m, i) => i).filter(i => chapterOf(i) === ch);
+const chapterKey = ch => (ch === 1 ? 'cs_missions' : `cs_missions${ch}`);
+const missionsCleared = ch => Math.min(chapterMissions(ch).length, loadNum(chapterKey(ch)));
+function firstOpenMission() {
+  for (const ch of Object.keys(CHAPTERS).map(Number)) {
+    const ids = chapterMissions(ch), done = missionsCleared(ch);
+    if (done < ids.length) return ids[done];
+  }
+  return 0;
+}
 const bestKey = (mode, diff) => `cs_best_${mode}_${diff}`;
 let roster = new Map();
 let pendingJoin = new URLSearchParams(location.search).get('room');
@@ -5008,7 +6194,7 @@ function buildSettings(m, interactive) {
     if (interactive) b.onclick = () => {
       const cfg = { t: 'cfg', mode: id };
       // jump to the first mission not cleared yet
-      if (id === 'missions' && m.mode !== 'missions') cfg.mission = Math.min(missionsCleared(), MISSIONS.length - 1);
+      if (id === 'missions' && m.mode !== 'missions') cfg.mission = firstOpenMission();
       send(cfg);
       A.initAudio(); A.play('click');
     };
@@ -5020,25 +6206,35 @@ function buildSettings(m, interactive) {
   $('mapBox').classList.toggle('hidden', isMissions);
   $('foeBox').classList.toggle('hidden', isMissions);
   if (isMissions) {
-    const cleared = missionsCleared();
-    $('missionProg').textContent = `${cleared} / ${MISSIONS.length} cleared`;
+    $('missionProg').textContent = '';
     const list = $('missionPick');
     list.innerHTML = '';
     list.classList.toggle('locked', !interactive);
-    MISSIONS.forEach((ms, i) => {
-      const locked = i > cleared;
-      const d = document.createElement('div');
-      d.className = 'mission' + (i === m.mission ? ' sel' : '') + (locked ? ' locked' : '') + (i < cleared ? ' done' : '');
-      const num = document.createElement('span'); num.className = 'num'; num.textContent = i < cleared ? '✓' : String(i + 1);
-      const info = document.createElement('div');
-      const b = document.createElement('b'); b.textContent = locked ? `${ms.name} (locked)` : ms.name;
-      const sm = document.createElement('small');
-      sm.textContent = `${(maps.find(x => x.id === ms.map) || {}).name} · ${GOAL_TEXT[ms.goal.type](ms.goal)}`;
-      info.append(b, sm);
-      d.append(num, info);
-      if (interactive && !locked) d.onclick = () => { send({ t: 'cfg', mission: i }); A.initAudio(); A.play('click'); };
-      list.appendChild(d);
-    });
+    for (const ch of Object.keys(CHAPTERS).map(Number)) {
+      const ids = chapterMissions(ch), cleared = missionsCleared(ch);
+      const head = document.createElement('div');
+      head.className = 'chapter';
+      head.textContent = CHAPTERS[ch];
+      const prog = document.createElement('span');
+      prog.textContent = `${cleared} / ${ids.length} cleared`;
+      head.appendChild(prog);
+      list.appendChild(head);
+      ids.forEach((i, k) => {
+        const ms = MISSIONS[i];
+        const locked = k > cleared;
+        const d = document.createElement('div');
+        d.className = 'mission' + (i === m.mission ? ' sel' : '') + (locked ? ' locked' : '') + (k < cleared ? ' done' : '');
+        const num = document.createElement('span'); num.className = 'num'; num.textContent = k < cleared ? '✓' : String(k + 1);
+        const info = document.createElement('div');
+        const b = document.createElement('b'); b.textContent = locked ? `${ms.name} (locked)` : ms.name;
+        const sm = document.createElement('small');
+        sm.textContent = `${getMap(ms.map).name} · ${missionGoal(ms)}`;
+        info.append(b, sm);
+        d.append(num, info);
+        if (interactive && !locked) d.onclick = () => { send({ t: 'cfg', mission: i }); A.initAudio(); A.play('click'); };
+        list.appendChild(d);
+      });
+    }
     const sel = MISSIONS[m.mission];
     $('missionDesc').textContent = sel ? sel.desc : '';
   }
@@ -5056,6 +6252,18 @@ function buildSettings(m, interactive) {
     seg.appendChild(b);
   }
   $('diffDesc').textContent = DIFF_DESC[m.diff] || '';
+  const ffSeg = $('ffPick');
+  ffSeg.innerHTML = '';
+  ffSeg.classList.toggle('locked', !interactive);
+  for (const [id, f] of Object.entries(FRIENDLY_FIRE)) {
+    const b = document.createElement('button');
+    b.textContent = f.name;
+    b.className = id === m.ff ? 'sel' : '';
+    b.disabled = !interactive && id !== m.ff;
+    if (interactive) b.onclick = () => { send({ t: 'cfg', ff: id }); A.initAudio(); A.play('click'); };
+    ffSeg.appendChild(b);
+  }
+  $('ffDesc').textContent = (FRIENDLY_FIRE[m.ff] || FRIENDLY_FIRE.off).desc;
   const foes = $('foePick');
   foes.innerHTML = '';
   foes.classList.toggle('locked', !interactive);
@@ -5164,6 +6372,7 @@ function toast(msg) {
 // ------------------------------------------------------------------ game --
 function startGame(m) {
   A.initAudio();
+  closeMenu(false);
   game = new ClientGame(renderer, net, m, roster, { openChat, setHurt });
   game.isHost = !!room && room.host === myId;
   show(null);
@@ -5179,13 +6388,14 @@ function setHurt(v) {
 function endGame() {
   setHurt(0);
   if (game) game.clearInput();
+  closeMenu(false);
   game = null;
   closeChat();
   document.body.classList.remove('playing');
 }
 
 function onOver(m) {
-  A.play('over', 1);
+  if (!m.stopped) A.play('over', 1);
   const g = game;
   setTimeout(() => {
     if (game && game !== g) return; // a new round already started
@@ -5194,40 +6404,43 @@ function onOver(m) {
     const diff = ` on ${DIFFICULTY[diffId].name}`;
     const ms = m.mode === 'missions' ? MISSIONS[m.mission] : null;
     const title = $('overTitle');
-    title.textContent = m.won ? 'MISSION COMPLETE' : ms && m.lost ? 'MISSION FAILED' : 'OVERRUN';
-    title.className = m.won ? 'victory' : 'danger';
+    title.textContent = m.stopped ? 'ROUND ENDED' : m.won ? 'MISSION COMPLETE' : ms && m.lost ? 'MISSION FAILED' : 'OVERRUN';
+    title.className = m.won ? 'victory' : m.stopped ? 'pmTitle' : 'danger';
     const stats = `${m.kills} undead destroyed · ${m.score.toLocaleString()} points`;
     if (ms) {
       let extra = '';
+      const ch = chapterOf(m.mission), ids = chapterMissions(ch), k = ids.indexOf(m.mission);
       if (m.won) {
-        const before = missionsCleared();
-        if (m.mission + 1 > before) saveNum('cs_missions', m.mission + 1);
-        const nxt = MISSIONS[m.mission + 1];
-        extra = nxt && m.mission + 1 > before ? ` · Unlocked: ${nxt.name}` : !nxt ? ' · Campaign complete!' : '';
+        const before = missionsCleared(ch);
+        if (k + 1 > before) saveNum(chapterKey(ch), k + 1);
+        const nxt = MISSIONS[ids[k + 1]];
+        extra = nxt && k + 1 > before ? ` · Unlocked: ${nxt.name}` : !nxt ? ' · Campaign complete!' : '';
       }
-      $('overSummary').textContent = `Mission ${m.mission + 1}: ${ms.name}${diff} · ${m.won ? 'cleared!' : m.lost || `overrun on wave ${m.wave}`} · ${stats}${extra}`;
+      const how = m.won ? 'cleared!' : m.stopped ? 'stopped by the host' : m.lost || (ms.zones ? `overrun in zone ${m.wave}` : `overrun on wave ${m.wave}`);
+      $('overSummary').textContent = `${CHAPTERS[ch]} ${k + 1}: ${ms.name}${diff} · ${how} · ${stats}${extra}`;
     } else {
       const key = bestKey(m.mode || 'classic', diffId);
       const best = loadNum(key);
       if (m.wave > best) saveNum(key, m.wave);
       const rec = m.wave > best && best ? ' · New personal best!' : best ? ` · Best: wave ${best}` : '';
-      $('overSummary').textContent = `Your team survived until wave ${m.wave}${diff} · ${stats}${rec}`;
+      $('overSummary').textContent = `Your team ${m.stopped ? 'stopped at' : 'survived until'} wave ${m.wave}${diff} · ${stats}${rec}`;
     }
     const tbl = $('overTable');
-    tbl.innerHTML = '<tr><th>Survivor</th><th>Kills</th><th>Best chain</th><th>Revives</th><th>Score</th></tr>';
+    const showFf = m.ff && m.ff !== 'off';
+    tbl.innerHTML = `<tr><th>Survivor</th><th>Kills</th><th>Best chain</th><th>Revives</th>${showFf ? '<th>Team damage</th>' : ''}<th>Score</th></tr>`;
     for (const s of [...m.stats].sort((a, b) => b.score - a.score)) {
       const tr = document.createElement('tr');
       const td0 = document.createElement('td');
       const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = s.color;
       td0.append(sw, document.createTextNode(s.name));
       tr.appendChild(td0);
-      for (const v of [s.kills, s.best, s.revives, s.score.toLocaleString()]) {
+      for (const v of [s.kills, s.best, s.revives, ...(showFf ? [s.ff || 0] : []), s.score.toLocaleString()]) {
         const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
       }
       tbl.appendChild(tr);
     }
     show('over');
-  }, 1600);
+  }, m.stopped ? 0 : 1600);
 }
 
 $('overBtn').onclick = () => { if (room && session) show('lobby'); else backToMenu(''); };
@@ -5255,6 +6468,52 @@ chatIn.addEventListener('keydown', e => {
   } else if (e.key === 'Escape') closeChat();
 });
 
+// ------------------------------------------------------------- game menu --
+// Esc opens this for everyone. The host's menu also pauses the round and adds the controls to restart or
+// end it. Other players keep playing behind it unless the host has paused, so it is only a way out.
+function pmConfirm(btn, label, act) {
+  btn.dataset.label = label;
+  btn.onclick = () => {
+    if (btn.classList.contains('confirm')) { pmReset(); act(); return; }
+    pmReset();
+    btn.classList.add('confirm');
+    btn.textContent = 'Click again to confirm';
+  };
+}
+function pmReset() {
+  for (const b of [$('pmRestart'), $('pmEnd'), $('pmLeave')]) {
+    b.classList.remove('confirm');
+    if (b.dataset.label) b.textContent = b.dataset.label;
+  }
+}
+const isRoomHost = () => !!room && room.host === myId;
+function openMenu() {
+  if (!game) return;
+  const host = isRoomHost();
+  game.menuOpen = true;
+  game.clearInput();
+  if (host) send({ t: 'pause', on: true });
+  $('pmTitle').textContent = host ? 'PAUSED' : 'MENU';
+  $('pmNote').textContent = host ? 'The game is paused for everyone.' : 'The game keeps running while this is open. Only the host can pause.';
+  $('pmRestart').classList.toggle('hidden', !host);
+  $('pmEnd').classList.toggle('hidden', !host);
+  pmConfirm($('pmLeave'), host ? 'Close room' : 'Leave game', () => { send({ t: 'leave' }); backToMenu(''); });
+  pmReset();
+  $('pmMute').textContent = `Sound: ${A.isMuted() ? 'off' : 'on'}`;
+  $('pauseMenu').classList.remove('hidden');
+}
+function closeMenu(resume = true) {
+  $('pauseMenu').classList.add('hidden');
+  if (!game || !game.menuOpen) return;
+  game.menuOpen = false;
+  if (resume && isRoomHost()) send({ t: 'pause', on: false });
+  canvas.focus();
+}
+$('pmResume').onclick = () => { A.play('click'); closeMenu(); };
+pmConfirm($('pmRestart'), 'Restart round', () => { closeMenu(false); send({ t: 'restart' }); });
+pmConfirm($('pmEnd'), 'End round', () => { closeMenu(false); send({ t: 'end' }); });
+$('pmMute').onclick = () => { $('pmMute').textContent = `Sound: ${A.toggleMute() ? 'off' : 'on'}`; };
+
 // ----------------------------------------------------------------- input --
 window.addEventListener('keydown', e => {
   if (!game || game.chatting) return;
@@ -5262,17 +6521,19 @@ window.addEventListener('keydown', e => {
   if (['Tab', ' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
   if (e.key === 'Escape') {
     if (e.repeat) return;
-    if (room && room.host === myId) send({ t: 'pause' });
-    else game.announce('ONLY THE HOST CAN PAUSE', '', 1.5, true);
+    if (game.menuOpen) closeMenu();
+    else openMenu();
     return;
   }
+  if (game.menuOpen) return;
   game.keyDown(e);
 });
 window.addEventListener('keyup', e => { if (game) game.keyUp(e); });
 window.addEventListener('blur', () => { if (game) game.clearInput(); });
 canvas.addEventListener('mousemove', e => {
   if (!game) return;
-  if (Math.abs(e.clientX - game.mouse.x) + Math.abs(e.clientY - game.mouse.y) > 3) game.aimMode = 'mouse';
+  // a bumped mouse shouldn't break a held keyboard aim
+  if (!game.fireKey && !game.lockKey && Math.abs(e.clientX - game.mouse.x) + Math.abs(e.clientY - game.mouse.y) > 3) game.aimMode = 'mouse';
   game.mouse.x = e.clientX;
   game.mouse.y = e.clientY;
 });
@@ -5282,9 +6543,14 @@ canvas.addEventListener('mousedown', e => {
   if (game.chatting) closeChat();
   if (e.button === 0 && game.clickUI(e.clientX, e.clientY)) { e.preventDefault(); return; }
   if (e.button === 0) { game.mouse.down = true; game.aimMode = 'mouse'; }
+  if (e.button === 2) game.useMouse = true;
   e.preventDefault();
 });
-window.addEventListener('mouseup', e => { if (game && e.button === 0) game.mouse.down = false; });
+window.addEventListener('mouseup', e => {
+  if (!game) return;
+  if (e.button === 0) game.mouse.down = false;
+  if (e.button === 2) game.useMouse = false;
+});
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('wheel', e => { if (game) { game.cycle(e.deltaY > 0 ? 1 : -1); e.preventDefault(); } }, { passive: false });
 window.addEventListener('resize', () => renderer.resize());
@@ -5321,14 +6587,20 @@ let lastT = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
-  if (game) {
-    if (renderer.map !== game.map) renderer.setMap(game.map);
-    game.update(dt);
-    game.render();
-  } else {
-    drawMenuBg(dt);
-  }
+  // Schedule the next frame first: one bad frame must never freeze the game for good.
   requestAnimationFrame(frame);
+  try {
+    if (game) {
+      if (renderer.map !== game.map) renderer.setMap(game.map);
+      game.update(dt);
+      game.render();
+    } else {
+      drawMenuBg(dt);
+    }
+  } catch (e) {
+    console.error(e);
+    (window.__cs.errors ||= []).push(String(e.stack || e));
+  }
 }
 
 // handle for automated tests / debugging in the console
